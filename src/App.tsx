@@ -742,133 +742,6 @@ function NwsAlertsCard(props: {
   )
 }
 
-function MarineCoastalCard(props: {
-  phase: LivePhase
-  alerts: NwsAlertFeature[]
-  errorMessage: string
-  fetchedAt: Date | null
-}) {
-  const { phase, alerts, errorMessage, fetchedAt } = props
-  const coastal = alerts.filter(isMarineCoastalHazardAlert)
-  const shown = coastal.slice(0, 4)
-
-  let badge: { label: string; style: React.CSSProperties }
-  if (phase === 'loading') {
-    badge = {
-      label: '···',
-      style: {
-        ...badgeBase,
-        background: 'rgba(200, 200, 210, 0.08)',
-        borderColor: 'rgba(255, 255, 255, 0.12)',
-        color: 'rgba(200, 210, 225, 0.75)',
-      },
-    }
-  } else if (phase === 'error') {
-    badge = {
-      label: 'Issue',
-      style: {
-        ...badgeBase,
-        background: 'rgba(240, 120, 120, 0.12)',
-        borderColor: 'rgba(240, 140, 140, 0.4)',
-        color: 'rgba(255, 190, 190, 0.95)',
-      },
-    }
-  } else if (shown.length === 0) {
-    badge = {
-      label: 'Calm',
-      style: {
-        ...badgeBase,
-        background: 'rgba(120, 200, 160, 0.12)',
-        borderColor: 'rgba(120, 200, 160, 0.35)',
-        color: 'rgba(180, 235, 205, 0.95)',
-      },
-    }
-  } else {
-    badge = {
-      label: 'Caution',
-      style: {
-        ...badgeBase,
-        background: 'rgba(240, 190, 110, 0.12)',
-        borderColor: 'rgba(240, 190, 110, 0.35)',
-        color: 'rgba(255, 220, 160, 0.95)',
-      },
-    }
-  }
-
-  const footerTime =
-    fetchedAt != null
-      ? fetchedAt.toLocaleString(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        })
-      : null
-
-  return (
-    <section className="card panel">
-      <div style={panelHead}>
-        <h2 className="card__title">Marine / rip current</h2>
-        <span style={badge.style}>{badge.label}</span>
-      </div>
-
-      {phase === 'loading' && (
-        <p className="panel__body">
-          Loading marine and beach-related hazards from the same NWS alert feed as
-          your VB ocean point…
-        </p>
-      )}
-
-      {phase === 'error' && (
-        <p className="panel__body">
-          Could not read the NWS feed for this card ({errorMessage}). Fix the
-          alerts fetch to see marine and beach hazard headlines here too.
-        </p>
-      )}
-
-      {phase === 'ready' && shown.length === 0 && (
-        <p className="panel__body">
-          No beach or marine-style watches or warnings jumped out on the official
-          NWS feed for the Virginia Beach ocean point — that usually means no
-          strong rip or surf headline there right now. Still swim near lifeguards
-          and read the posted flags; this panel is not a lifeguard substitute.
-        </p>
-      )}
-
-      {phase === 'ready' && shown.length > 0 && (
-        <div className="panel__body">
-          <p style={{ margin: 0 }}>
-            Coastal / marine-related NWS alerts for the VB ocean point (subset of
-            the live alert feed):
-          </p>
-          {shown.map((f, i) => {
-            const p = f.properties!
-            const event = (p.event && p.event.trim()) || 'Alert'
-            const line =
-              (p.headline && p.headline.trim()) ||
-              (p.areaDesc && `Applies to: ${p.areaDesc}`) ||
-              'See weather.gov for details.'
-            return (
-              <p
-                key={f.id ?? `${event}-marine-${i}`}
-                style={{ ...quakeLine, marginTop: i === 0 ? '0.5rem' : '0.45rem' }}
-              >
-                <strong>{event}</strong>
-                {' — '}
-                {line}
-              </p>
-            )
-          })}
-        </div>
-      )}
-
-      <p style={metaMuted}>
-        {phase === 'loading' && 'Last updated · loading…'}
-        {phase === 'error' && 'Last updated · —'}
-        {phase === 'ready' && footerTime != null && `Last updated · NWS · ${footerTime}`}
-      </p>
-    </section>
-  )
-}
-
 function HurricanesCard(props: {
   phase: LivePhase
   storms: NhcStorm[]
@@ -1415,32 +1288,25 @@ function App() {
               </div>
               <p className="score-summary__blurb">{score.blurb}</p>
             </section>
-              <SkywatchCard />
+              <NwsAlertsCard
+                phase={nwsPhase}
+                alerts={nwsAlerts}
+                errorMessage={nwsError}
+                fetchedAt={nwsFetchedAt}
+              />
             </div>
 
             <WindyMapCard />
           </div>
 
           <aside className="panels" aria-label="Condition panels">
-            <NwsAlertsCard
-              phase={nwsPhase}
-              alerts={nwsAlerts}
-              errorMessage={nwsError}
-              fetchedAt={nwsFetchedAt}
-            />
+            <SkywatchCard />
 
             <HurricanesCard
               phase={nhcPhase}
               storms={atlanticStorms}
               errorMessage={nhcError}
               fetchedAt={nhcFetchedAt}
-            />
-
-            <MarineCoastalCard
-              phase={nwsPhase}
-              alerts={nwsAlerts}
-              errorMessage={nwsError}
-              fetchedAt={nwsFetchedAt}
             />
 
             <QuakesCard

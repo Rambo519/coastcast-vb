@@ -165,7 +165,7 @@
   box-sizing: border-box;
 }
 
-.dashboard__top > .skywatch-card {
+.dashboard__top > .panel {
   min-height: 0;
   height: auto;
   align-self: start;
@@ -174,7 +174,7 @@
   box-sizing: border-box;
 }
 
-.dashboard__top > .skywatch-card > .panel__body {
+.dashboard__top > .panel > .panel__body {
   flex: 0 0 auto;
 }
 
@@ -473,7 +473,7 @@
 }
 
 /* Panel header row: solid inset accent + soft left glow (titles use same hex) */
-.panels > .panel:nth-child(1) > div:first-child {
+.dashboard__top > .panel > div:first-child {
   padding-left: 0.7rem;
   border-radius: 2px;
   box-shadow:
@@ -493,19 +493,11 @@
   padding-left: 0.7rem;
   border-radius: 2px;
   box-shadow:
-    inset 3px 0 0 var(--accent-nws),
-    -6px 0 18px rgba(255, 122, 77, 0.14);
-}
-
-.panels > .panel:nth-child(4) > div:first-child {
-  padding-left: 0.7rem;
-  border-radius: 2px;
-  box-shadow:
     inset 3px 0 0 #ef4444,
     -6px 0 18px rgba(239, 68, 68, 0.14);
 }
 
-.panels > .panel:nth-child(5) > div:first-child {
+.panels > .panel:nth-child(4) > div:first-child {
   padding-left: 0.7rem;
   border-radius: 2px;
   box-shadow:
@@ -525,12 +517,13 @@
 }
 
 /* Shared header breathing room (accent bars stay on nth-child rules) */
-.panels > .panel > div:first-child {
+.panels > .panel:not(.skywatch-card) > div:first-child,
+.dashboard__top > .panel > div:first-child {
   padding-top: 0.2rem;
   padding-bottom: 0.22rem;
 }
 
-.panels > .panel:nth-child(1) .card__title {
+.dashboard__top > .panel .card__title {
   padding-left: 0;
   border-left: none;
   font-size: 1.125rem;
@@ -560,25 +553,13 @@
   font-size: 1.125rem;
   font-weight: 700;
   letter-spacing: -0.03em;
-  color: var(--accent-nws);
-  line-height: 1.28;
-  padding-top: 0.06rem;
-  padding-bottom: 0.06rem;
-}
-
-.panels > .panel:nth-child(4) .card__title {
-  padding-left: 0;
-  border-left: none;
-  font-size: 1.125rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
   color: #ef4444;
   line-height: 1.28;
   padding-top: 0.06rem;
   padding-bottom: 0.06rem;
 }
 
-.panels > .panel:nth-child(5) .card__title {
+.panels > .panel:nth-child(4) .card__title {
   padding-left: 0;
   border-left: none;
   font-size: 1.125rem;
@@ -638,25 +619,30 @@
     0 1px 4px rgba(0, 0, 0, 0.28);
 }
 
-.panels .panel .card__title {
+.panels .panel:not(.skywatch-card) .card__title,
+.dashboard__top > .panel .card__title {
   margin-bottom: 0.62rem;
 }
 
-.panels .panel > .panel__body {
+.panels .panel:not(.skywatch-card) > .panel__body,
+.dashboard__top > .panel > .panel__body {
   margin-top: 0.7rem;
 }
 
-.panels .panel .panel__body > p:first-of-type {
+.panels .panel:not(.skywatch-card) .panel__body > p:first-of-type,
+.dashboard__top > .panel .panel__body > p:first-of-type {
   color: rgba(230, 228, 223, 0.92);
 }
 
-.panels .panel a {
+.panels .panel a,
+.dashboard__top > .panel a {
   color: inherit;
   text-underline-offset: 0.12em;
 }
 
 /* Last line in each panel: “Last updated …” (inline styles overridden) */
-.panels .panel > p:last-child {
+.panels .panel:not(.skywatch-card) > p:last-child,
+.dashboard__top > .panel > p:last-child {
   margin-top: 0.72rem !important;
   padding-top: 0.55rem;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -669,14 +655,15 @@
 }
 
 /* Badge row: shared instrument readout */
-.panels .panel > div:first-child > span {
+.panels .panel:not(.skywatch-card) > div:first-child > span,
+.dashboard__top > .panel > div:first-child > span {
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.07) inset,
     0 1px 4px rgba(0, 0, 0, 0.28);
 }
 
 /* Badges match panel accents (overrides inline React colors) */
-.panels > .panel:nth-child(1) > div:first-child > span {
+.dashboard__top > .panel > div:first-child > span {
   background: #1a1408 !important;
   border: 1px solid var(--accent-quake) !important;
   color: var(--accent-quake) !important;
@@ -689,18 +676,12 @@
 }
 
 .panels > .panel:nth-child(3) > div:first-child > span {
-  background: #1a0e0a !important;
-  border: 1px solid var(--accent-nws) !important;
-  color: var(--accent-nws) !important;
-}
-
-.panels > .panel:nth-child(4) > div:first-child > span {
   background: #1a0c0c !important;
   border: 1px solid #ef4444 !important;
   color: #f87171 !important;
 }
 
-.panels > .panel:nth-child(5) > div:first-child > span {
+.panels > .panel:nth-child(4) > div:first-child > span {
   background: #0a140d !important;
   border: 1px solid var(--accent-nature) !important;
   color: var(--accent-nature) !important;
@@ -712,9 +693,9 @@
   color: #c4b5fd !important;
 }
 
-.panels > .panel:nth-child(1) .panel__body strong,
-.panels > .panel:nth-child(1) .panel__body b,
-.panels > .panel:nth-child(1) .panel__body em {
+.dashboard__top > .panel .panel__body strong,
+.dashboard__top > .panel .panel__body b,
+.dashboard__top > .panel .panel__body em {
   color: var(--accent-quake);
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -732,23 +713,14 @@
 .panels > .panel:nth-child(3) .panel__body strong,
 .panels > .panel:nth-child(3) .panel__body b,
 .panels > .panel:nth-child(3) .panel__body em {
-  color: var(--accent-nws);
+  color: var(--accent-marine);
   font-weight: 700;
-  letter-spacing: 0.02em;
   font-style: normal;
 }
 
 .panels > .panel:nth-child(4) .panel__body strong,
 .panels > .panel:nth-child(4) .panel__body b,
 .panels > .panel:nth-child(4) .panel__body em {
-  color: var(--accent-marine);
-  font-weight: 700;
-  font-style: normal;
-}
-
-.panels > .panel:nth-child(5) .panel__body strong,
-.panels > .panel:nth-child(5) .panel__body b,
-.panels > .panel:nth-child(5) .panel__body em {
   color: var(--accent-nature);
   font-weight: 700;
   font-style: normal;
@@ -871,8 +843,8 @@
   .dashboard {
     grid-template-columns: 1fr;
     grid-template-areas:
-      'panels'
-      'stack';
+      'stack'
+      'panels';
   }
 
   .dashboard__top {
