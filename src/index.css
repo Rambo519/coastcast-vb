@@ -1,0 +1,93 @@
+:root {
+  --text: #e6e4df;
+  --text-muted: #9b978e;
+  --text-strong: #f7f5f0;
+  --bg: #0a0c0f;
+  --bg-elevated: #0e1116;
+  --surface: #13161c;
+  --surface-2: #181c24;
+  --surface-highlight: #1e232e;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --accent: #c9e8e6;
+  --accent-bright: #c9e8e6;
+  --accent-soft: rgba(201, 232, 230, 0.16);
+  --accent-glow: rgba(201, 232, 230, 0.18);
+  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  --shadow-card: 0 12px 40px rgba(0, 0, 0, 0.35);
+  --radius-lg: 14px;
+  --radius-md: 10px;
+
+  /* Exact panel / highlight accents (solid, readable on dark) */
+  --accent-map: #c5e8e6;
+  --accent-quake: #f5b942;
+  --accent-hurricane: #38bdf8;
+  --accent-nws: #ff7a4d;
+  --accent-marine: #5eead4;
+  --accent-nature: #4ade80;
+  --accent-score: #e8e4dc;
+
+  --title-map: var(--accent-map);
+  --title-quake: var(--accent-quake);
+  --title-hurricane: var(--accent-hurricane);
+  --title-nws: var(--accent-nws);
+  --title-marine: var(--accent-marine);
+  --title-nature: var(--accent-nature);
+  --title-score: var(--accent-score);
+
+  --mag-color: var(--accent-quake);
+  --alert-event: var(--accent-nws);
+  --meta-fg: rgba(196, 192, 184, 0.72);
+  --meta-dim: rgba(156, 152, 144, 0.55);
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'Segoe UI Mono', 'SFMono-Regular', Consolas, monospace;
+
+  font: 16px/1.5 var(--sans);
+  color-scheme: dark;
+  color: var(--text);
+  background-color: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+  background: var(--bg);
+  background-image:
+    radial-gradient(ellipse 120% 80% at 50% -28%, rgba(200, 205, 218, 0.045), transparent 55%),
+    radial-gradient(ellipse 90% 55% at 100% 100%, rgba(165, 150, 130, 0.035), transparent 50%);
+}
+
+#root {
+  min-height: 100svh;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.75rem clamp(1rem, 4vw, 2rem) 2.5rem;
+  text-align: left;
+}
+
+h2 {
+  font-family: var(--sans);
+  font-weight: 800;
+  letter-spacing: -0.028em;
+  text-rendering: geometricPrecision;
+}
+
+p {
+  margin: 0;
+}
+
+::selection {
+  background: rgba(200, 205, 215, 0.22);
+  color: var(--text-strong);
+}
