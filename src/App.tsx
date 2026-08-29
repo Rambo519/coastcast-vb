@@ -190,10 +190,22 @@ type UsgsFeature = {
 type NwsAlertFeature = {
   id?: string
   properties?: {
+    '@id'?: string | null
     event?: string | null
     headline?: string | null
     areaDesc?: string | null
   } | null
+}
+
+/** Prefer the GeoJSON feature URI, then properties.@id, only if it is http(s). */
+function nwsAlertOfficialUrl(f: NwsAlertFeature): string | null {
+  const candidates = [f.id, f.properties?.['@id']]
+  for (const raw of candidates) {
+    if (typeof raw !== 'string') continue
+    const url = raw.trim()
+    if (isUsableHttpUrl(url)) return url
+  }
+  return null
 }
 
 /** Subset of NHC CurrentStorms.json storm objects we read (see NHC JSON reference). */
@@ -683,7 +695,7 @@ function NwsAlertsCard(props: {
       : null
 
   return (
-    <section className="card panel">
+    <section className="card panel nws-alerts-card">
       <div style={panelHead}>
         <h2 className="card__title">Weather Alerts</h2>
         <span style={badge.style}>{badge.label}</span>
@@ -719,12 +731,27 @@ function NwsAlertsCard(props: {
               (p.headline && p.headline.trim()) ||
               (p.areaDesc && `Applies to: ${p.areaDesc}`) ||
               'See weather.gov for details.'
+            const officialUrl = nwsAlertOfficialUrl(f)
             return (
               <p
                 key={f.id ?? `${event}-${i}`}
                 style={{ ...quakeLine, marginTop: i === 0 ? '0.5rem' : '0.45rem' }}
               >
-                <strong>{event}</strong>
+                {officialUrl ? (
+                  <a
+                    href={officialUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <strong>{event}</strong>
+                    <span className="nws-alert-ext" aria-hidden="true">
+                      {' '}
+                      ↗
+                    </span>
+                  </a>
+                ) : (
+                  <strong>{event}</strong>
+                )}
                 {' — '}
                 {line}
               </p>
