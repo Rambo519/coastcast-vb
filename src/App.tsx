@@ -13,10 +13,8 @@ const NWS_FETCH_HEADERS = {
   'User-Agent': 'CoastCastVB/0.1 (Virginia Beach dashboard; educational use)',
 } as const
 
-/** NOAA/NHC CurrentStorms.json — in dev, same-origin proxy (see vite.config.ts). */
-const NHC_CURRENT_STORMS_URL = import.meta.env.DEV
-  ? '/api/nhc-current-storms'
-  : 'https://www.nhc.noaa.gov/CurrentStorms.json'
+/** NOAA/NHC CurrentStorms.json — Vite proxy in dev, Vercel function in prod. */
+const NHC_CURRENT_STORMS_URL = '/api/nhc-current-storms'
 
 const NHC_FETCH_HEADERS = {
   Accept: 'application/json',
