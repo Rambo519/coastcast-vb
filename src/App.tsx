@@ -1,5 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
+
+const VB_LAT = 36.8529
+const VB_LON = -75.978
+
+const USE_MY_LOCATION_PREF_KEY = 'coastcast-use-my-location'
 
 const USGS_QUAKES_URL =
   'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=36.8529&longitude=-75.9780&maxradiuskm=805&minmagnitude=2.5&orderby=time&limit=20'
@@ -7,6 +12,14 @@ const USGS_QUAKES_URL =
 /** Virginia Beach oceanfront — NWS active alerts for this point */
 const NWS_ALERTS_URL =
   'https://api.weather.gov/alerts/active?point=36.8529,-75.9780'
+
+function nwsActiveAlertsUrl(lat: number, lon: number): string {
+  const point =
+    lat === VB_LAT && lon === VB_LON
+      ? '36.8529,-75.9780'
+      : `${lat.toFixed(4)},${lon.toFixed(4)}`
+  return `https://api.weather.gov/alerts/active?point=${point}`
+}
 
 const NWS_FETCH_HEADERS = {
   Accept: 'application/geo+json',
@@ -177,6 +190,47 @@ function wikiHitIsOceanfrontOnly(title: string, snippetPlain: string): boolean {
 }
 
 type LivePhase = 'loading' | 'error' | 'ready'
+
+type GeoCoords = { latitude: number; longitude: number }
+type LocationSource = 'virginia-beach' | 'browser'
+type GeoPhase = 'idle' | 'locating' | 'ready' | 'denied' | 'unavailable'
+
+const VB_COORDS: GeoCoords = { latitude: VB_LAT, longitude: VB_LON }
+
+function readUseMyLocationPref(): boolean {
+  try {
+    return window.localStorage.getItem(USE_MY_LOCATION_PREF_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeUseMyLocationPref(enabled: boolean): void {
+  try {
+    if (enabled) window.localStorage.setItem(USE_MY_LOCATION_PREF_KEY, '1')
+    else window.localStorage.removeItem(USE_MY_LOCATION_PREF_KEY)
+  } catch {
+    /* private mode / blocked storage */
+  }
+}
+
+function requestBrowserLocation(): Promise<GeoCoords> {
+  return new Promise((resolve, reject) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      reject(new Error('unavailable'))
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) =>
+        resolve({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        }),
+      (err) => reject(err),
+      { enableHighAccuracy: false, maximumAge: 300_000, timeout: 12_000 },
+    )
+  })
+}
 
 type UsgsFeature = {
   properties: {
@@ -1097,6 +1151,55 @@ function SkywatchCard() {
   )
 }
 
+function LocationPrefControl(props: {
+  preferMyLocation: boolean
+  source: LocationSource
+  phase: GeoPhase
+  coords: GeoCoords
+  onUseMyLocation: () => void
+  onUseVirginiaBeach: () => void
+}) {
+  const {
+    preferMyLocation,
+    source,
+    phase,
+    coords,
+    onUseMyLocation,
+    onUseVirginiaBeach,
+  } = props
+  const locating = phase === 'locating'
+  const locReady =
+    Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude)
+  const usingBrowser = source === 'browser' && phase === 'ready' && locReady
+  const fallbackNote =
+    preferMyLocation &&
+    source === 'virginia-beach' &&
+    (phase === 'denied' || phase === 'unavailable')
+
+  return (
+    <p className="score-summary__loc">
+      {locating && <span>Locating…</span>}
+      {usingBrowser && (
+        <>
+          <span>Using your location</span>
+          {' · '}
+          <button type="button" onClick={onUseVirginiaBeach} disabled={locating}>
+            Virginia Beach
+          </button>
+        </>
+      )}
+      {!locating && !usingBrowser && (
+        <>
+          {fallbackNote && <span>Using Virginia Beach · </span>}
+          <button type="button" onClick={onUseMyLocation}>
+            Use my location
+          </button>
+        </>
+      )}
+    </p>
+  )
+}
+
 function App() {
   const [quakePhase, setQuakePhase] = useState<LivePhase>('loading')
   const [quakes, setQuakes] = useState<UsgsFeature[]>([])
@@ -1104,14 +1207,17 @@ function App() {
 
   const [nwsPhase, setNwsPhase] = useState<LivePhase>('loading')
   const [nwsAlerts, setNwsAlerts] = useState<NwsAlertFeature[]>([])
-  const [nwsError, setNwsError] = useState('')
+
+  const [weatherAlertPhase, setWeatherAlertPhase] = useState<LivePhase>('loading')
+  const [weatherAlerts, setWeatherAlerts] = useState<NwsAlertFeature[]>([])
+  const [weatherAlertError, setWeatherAlertError] = useState('')
+  const [weatherAlertFetchedAt, setWeatherAlertFetchedAt] = useState<Date | null>(null)
 
   const [nhcPhase, setNhcPhase] = useState<LivePhase>('loading')
   const [atlanticStorms, setAtlanticStorms] = useState<NhcStorm[]>([])
   const [nhcError, setNhcError] = useState('')
 
   const [quakeFetchedAt, setQuakeFetchedAt] = useState<Date | null>(null)
-  const [nwsFetchedAt, setNwsFetchedAt] = useState<Date | null>(null)
   const [nhcFetchedAt, setNhcFetchedAt] = useState<Date | null>(null)
 
   const [naturePhase, setNaturePhase] = useState<LivePhase>('loading')
@@ -1119,6 +1225,52 @@ function App() {
   const [natureError, setNatureError] = useState('')
   const [natureFromWiki, setNatureFromWiki] = useState(false)
   const [natureFetchedAt, setNatureFetchedAt] = useState<Date | null>(null)
+
+  const [preferMyLocation, setPreferMyLocation] = useState(readUseMyLocationPref)
+  const [coords, setCoords] = useState<GeoCoords>(VB_COORDS)
+  const [locationSource, setLocationSource] = useState<LocationSource>('virginia-beach')
+  const [geoPhase, setGeoPhase] = useState<GeoPhase>(() =>
+    readUseMyLocationPref() ? 'locating' : 'idle',
+  )
+
+  const useVirginiaBeach = useCallback(() => {
+    writeUseMyLocationPref(false)
+    setPreferMyLocation(false)
+    setCoords(VB_COORDS)
+    setLocationSource('virginia-beach')
+    setGeoPhase('idle')
+  }, [])
+
+  const useMyLocation = useCallback(() => {
+    writeUseMyLocationPref(true)
+    setPreferMyLocation(true)
+  }, [])
+
+  useEffect(() => {
+    if (!preferMyLocation) return
+    let cancelled = false
+    setGeoPhase('locating')
+    requestBrowserLocation()
+      .then((next) => {
+        if (cancelled) return
+        setCoords(next)
+        setLocationSource('browser')
+        setGeoPhase('ready')
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setCoords(VB_COORDS)
+        setLocationSource('virginia-beach')
+        const code =
+          err && typeof err === 'object' && 'code' in err
+            ? Number((err as { code: unknown }).code)
+            : NaN
+        setGeoPhase(code === 1 ? 'denied' : 'unavailable')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [preferMyLocation])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -1164,16 +1316,59 @@ function App() {
             (f.properties.headline || f.properties.event),
         )
         setNwsAlerts(useful)
-        setNwsFetchedAt(new Date())
         setNwsPhase('ready')
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') return
-        setNwsError(e instanceof Error ? e.message : 'Could not load alerts')
         setNwsPhase('error')
       }
     })()
     return () => ctrl.abort()
   }, [])
+
+  useEffect(() => {
+    if (preferMyLocation && geoPhase === 'locating') {
+      setWeatherAlertPhase('loading')
+      return
+    }
+
+    const point =
+      locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
+    const url = nwsActiveAlertsUrl(point.latitude, point.longitude)
+    const ctrl = new AbortController()
+    setWeatherAlertPhase('loading')
+    ;(async () => {
+      try {
+        const res = await fetch(url, {
+          signal: ctrl.signal,
+          headers: NWS_FETCH_HEADERS,
+        })
+        if (!res.ok) throw new Error(`NWS responded with ${res.status}`)
+        const data: { features?: NwsAlertFeature[] } = await res.json()
+        const raw = Array.isArray(data.features) ? data.features : []
+        const useful = raw.filter(
+          (f) =>
+            f.properties != null &&
+            (f.properties.headline || f.properties.event),
+        )
+        setWeatherAlerts(useful)
+        setWeatherAlertFetchedAt(new Date())
+        setWeatherAlertPhase('ready')
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') return
+        setWeatherAlertError(
+          e instanceof Error ? e.message : 'Could not load alerts',
+        )
+        setWeatherAlertPhase('error')
+      }
+    })()
+    return () => ctrl.abort()
+  }, [
+    preferMyLocation,
+    geoPhase,
+    locationSource,
+    coords.latitude,
+    coords.longitude,
+  ])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -1314,12 +1509,20 @@ function App() {
                 </div>
               </div>
               <p className="score-summary__blurb">{score.blurb}</p>
+              <LocationPrefControl
+                preferMyLocation={preferMyLocation}
+                source={locationSource}
+                phase={geoPhase}
+                coords={coords}
+                onUseMyLocation={useMyLocation}
+                onUseVirginiaBeach={useVirginiaBeach}
+              />
             </section>
               <NwsAlertsCard
-                phase={nwsPhase}
-                alerts={nwsAlerts}
-                errorMessage={nwsError}
-                fetchedAt={nwsFetchedAt}
+                phase={weatherAlertPhase}
+                alerts={weatherAlerts}
+                errorMessage={weatherAlertError}
+                fetchedAt={weatherAlertFetchedAt}
               />
             </div>
 

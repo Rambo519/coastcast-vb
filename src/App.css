@@ -258,6 +258,108 @@
   line-height: 1.45;
 }
 
+.score-summary__loc {
+  margin: 0.32rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.018em;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.score-summary__loc button {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #38bdf8;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: inherit;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.32);
+}
+
+.score-summary__loc button:hover {
+  border-bottom-color: rgba(56, 189, 248, 0.6);
+}
+
+.score-summary__loc button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+@media (max-width: 600px) {
+  .dashboard__top > .score-summary {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .dashboard__left .score-summary {
+    padding: 0.72rem 0.8rem 0.78rem;
+    overflow: visible;
+  }
+
+  .dashboard__left .score-summary__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.65rem;
+    align-items: center;
+  }
+
+  .dashboard__left .score-summary__intro {
+    min-width: 0;
+    padding-left: 0.62rem;
+    overflow: visible;
+  }
+
+  .dashboard__left .score-summary__intro .brand {
+    font-size: clamp(1.62rem, 7.2vw, 2.05rem);
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+  }
+
+  .dashboard__left .score-summary__place {
+    font-size: 0.9375rem;
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+  }
+
+  .dashboard__left .score-summary__metric {
+    min-width: 0;
+    width: fit-content;
+    max-width: 46%;
+    padding-left: 0.12rem;
+    justify-self: end;
+    align-self: center;
+    align-items: center;
+  }
+
+  .dashboard__left .score-summary__value {
+    font-size: clamp(2.35rem, 11.5vw, 3.05rem);
+    min-width: 3.9rem;
+    min-height: 2.7rem;
+    width: auto;
+    padding: 0.14rem 0.62rem 0.16rem;
+    overflow: visible;
+  }
+
+  .dashboard__left .score-summary__status {
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .dashboard__left .score-summary__blurb {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+  }
+}
+
 @media (max-width: 380px) {
   .dashboard__left .score-summary__row {
     grid-template-columns: 1fr;
@@ -274,6 +376,7 @@
   .dashboard__left .score-summary__metric {
     justify-self: end;
     width: fit-content;
+    max-width: none;
     margin-left: auto;
     align-self: start;
   }
