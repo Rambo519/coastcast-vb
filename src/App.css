@@ -346,19 +346,20 @@
   }
 
   .dashboard__left .score-summary__value {
-    font-size: clamp(1.7rem, 8vw, 2.2rem);
+    box-sizing: content-box;
+    font-size: 2.35rem;
     line-height: 1;
     letter-spacing: -0.04em;
-    min-width: 5.15rem;
-    min-height: 3.5rem;
-    width: auto;
-    padding: 0.22rem 0.7rem;
+    min-width: 2.75em;
+    width: max-content;
+    min-height: 0;
+    height: auto;
+    padding: 0.3rem 0.7rem;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: visible;
     flex-shrink: 0;
-    box-sizing: border-box;
   }
 
   .dashboard__left .score-summary__status {
