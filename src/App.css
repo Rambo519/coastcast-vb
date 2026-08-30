@@ -299,18 +299,19 @@
   .dashboard__top > .score-summary {
     height: auto;
     min-height: 0;
-    overflow: visible;
+    overflow: hidden;
   }
 
   .dashboard__left .score-summary {
     padding: 0.72rem 0.8rem 0.78rem;
-    overflow: visible;
+    overflow: hidden;
   }
 
   .dashboard__left .score-summary__row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) 112px;
     column-gap: 0.65rem;
     align-items: center;
+    min-width: 0;
   }
 
   .dashboard__left .score-summary__intro {
@@ -336,30 +337,32 @@
   }
 
   .dashboard__left .score-summary__metric {
-    min-width: 0;
-    width: fit-content;
-    max-width: 46%;
-    padding-left: 0.12rem;
-    justify-self: end;
+    width: 112px;
+    min-width: 112px;
+    max-width: 112px;
+    padding-left: 0;
+    justify-self: stretch;
     align-self: center;
     align-items: center;
+    box-sizing: border-box;
   }
 
   .dashboard__left .score-summary__value {
-    box-sizing: content-box;
+    box-sizing: border-box;
     font-size: 2.35rem;
     line-height: 1;
     letter-spacing: -0.04em;
-    min-width: 2.75em;
-    width: max-content;
-    min-height: 0;
-    height: auto;
-    padding: 0.3rem 0.7rem;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 3.35rem;
+    height: 3.35rem;
+    padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: visible;
-    flex-shrink: 0;
+    overflow: hidden;
+    flex-shrink: 1;
   }
 
   .dashboard__left .score-summary__status {
@@ -388,15 +391,16 @@
 
   .dashboard__left .score-summary__metric {
     justify-self: end;
-    width: fit-content;
-    max-width: none;
+    width: 112px;
+    min-width: 112px;
+    max-width: 112px;
     margin-left: auto;
     align-self: start;
   }
 
   .dashboard__left .score-summary__value {
     justify-self: unset;
-    width: auto;
+    width: 100%;
     margin-left: 0;
     align-self: center;
   }
