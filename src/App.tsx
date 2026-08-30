@@ -26,6 +26,29 @@ const NWS_FETCH_HEADERS = {
   'User-Agent': 'CoastCastVB/0.1 (Virginia Beach dashboard; educational use)',
 } as const
 
+async function fetchNwsPointLabel(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const url = `https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`
+  const res = await fetch(url, { signal, headers: NWS_FETCH_HEADERS })
+  if (!res.ok) return null
+  const data: unknown = await res.json()
+  if (!data || typeof data !== 'object') return null
+  const props = (data as { properties?: { relativeLocation?: unknown } }).properties
+  const rel = props?.relativeLocation
+  const relProps =
+    rel && typeof rel === 'object'
+      ? (rel as { properties?: { city?: unknown; state?: unknown } }).properties
+      : undefined
+  const city = typeof relProps?.city === 'string' ? relProps.city.trim() : ''
+  const state = typeof relProps?.state === 'string' ? relProps.state.trim() : ''
+  if (city && state) return `${city}, ${state}`
+  if (city) return city
+  return null
+}
+
 /** NOAA/NHC CurrentStorms.json — Vite proxy in dev, Vercel function in prod. */
 const NHC_CURRENT_STORMS_URL = '/api/nhc-current-storms'
 
@@ -504,13 +527,13 @@ type WindyLayer = 'radar' | 'wind' | 'rain'
 const VB_WINDY_LAT = '36.8529'
 const VB_WINDY_LON = '-75.9780'
 
-function windyEmbedUrl(overlay: WindyLayer): string {
+function windyEmbedUrl(overlay: WindyLayer, lat: string, lon: string): string {
   const product = overlay === 'radar' ? 'radar' : 'ecmwf'
   const q = new URLSearchParams({
-    lat: VB_WINDY_LAT,
-    lon: VB_WINDY_LON,
-    detailLat: VB_WINDY_LAT,
-    detailLon: VB_WINDY_LON,
+    lat,
+    lon,
+    detailLat: lat,
+    detailLon: lon,
     zoom: '9',
     level: 'surface',
     overlay,
@@ -525,13 +548,25 @@ function windyEmbedUrl(overlay: WindyLayer): string {
   return `https://embed.windy.com/embed2.html?${q.toString()}&menu=&message=&marker=&pressure=&detail=`
 }
 
-function WindyMapCard() {
+function WindyMapCard(props: {
+  latitude: number
+  longitude: number
+  usingCurrentLocation: boolean
+  placeLabel: string | null
+}) {
+  const { latitude, longitude, usingCurrentLocation, placeLabel } = props
   const [layer, setLayer] = useState<WindyLayer>('radar')
   const layers: { id: WindyLayer; label: string }[] = [
     { id: 'radar', label: 'RADAR' },
     { id: 'wind', label: 'WIND' },
     { id: 'rain', label: 'RAIN' },
   ]
+
+  const latStr = usingCurrentLocation ? latitude.toFixed(4) : VB_WINDY_LAT
+  const lonStr = usingCurrentLocation ? longitude.toFixed(4) : VB_WINDY_LON
+  const locationLabel = usingCurrentLocation
+    ? (placeLabel ?? 'Current location')
+    : 'Virginia Beach / Norfolk'
 
   return (
     <section className="card map-placeholder" aria-label="Map area">
@@ -556,13 +591,14 @@ function WindyMapCard() {
             </span>
           ))}
         </div>
-        <p className="map-placeholder__loc">Virginia Beach / Norfolk</p>
+        <p className="map-placeholder__loc">{locationLabel}</p>
       </div>
       <div className="map-placeholder__frame map-placeholder__frame--live">
         <iframe
+          key={`${latStr},${lonStr}`}
           className="map-placeholder__iframe"
-          title={`Windy ${layer} map of Virginia Beach`}
-          src={windyEmbedUrl(layer)}
+          title={`Windy ${layer} map of ${locationLabel}`}
+          src={windyEmbedUrl(layer, latStr, lonStr)}
           loading="lazy"
         />
       </div>
@@ -1152,45 +1188,43 @@ function SkywatchCard() {
 }
 
 function LocationPrefControl(props: {
-  preferMyLocation: boolean
   source: LocationSource
   phase: GeoPhase
-  coords: GeoCoords
+  placeLabel: string | null
   onUseMyLocation: () => void
   onUseVirginiaBeach: () => void
 }) {
-  const {
-    preferMyLocation,
-    source,
-    phase,
-    coords,
-    onUseMyLocation,
-    onUseVirginiaBeach,
-  } = props
+  const { source, phase, placeLabel, onUseMyLocation, onUseVirginiaBeach } = props
   const locating = phase === 'locating'
-  const locReady =
-    Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude)
-  const usingBrowser = source === 'browser' && phase === 'ready' && locReady
-  const fallbackNote =
-    preferMyLocation &&
-    source === 'virginia-beach' &&
-    (phase === 'denied' || phase === 'unavailable')
+  const usingBrowser = source === 'browser' && phase === 'ready'
+  const unavailable = phase === 'denied' || phase === 'unavailable'
+
+  const viewingCurrent = placeLabel
+    ? `Viewing: ${placeLabel} · Current location`
+    : 'Viewing: Current location'
 
   return (
     <p className="score-summary__loc">
-      {locating && <span>Locating…</span>}
+      {locating && <span>Locating...</span>}
       {usingBrowser && (
         <>
-          <span>Using your location</span>
-          {' · '}
-          <button type="button" onClick={onUseVirginiaBeach} disabled={locating}>
-            Virginia Beach
+          <span>{viewingCurrent}</span>
+          <button type="button" onClick={onUseVirginiaBeach}>
+            Use Virginia Beach
           </button>
         </>
       )}
-      {!locating && !usingBrowser && (
+      {unavailable && (
         <>
-          {fallbackNote && <span>Using Virginia Beach · </span>}
+          <span>Location unavailable — using Virginia Beach</span>
+          <button type="button" onClick={onUseMyLocation}>
+            Retry location
+          </button>
+        </>
+      )}
+      {!locating && !usingBrowser && !unavailable && (
+        <>
+          <span>Viewing: Virginia Beach, VA · Default</span>
           <button type="button" onClick={onUseMyLocation}>
             Use my location
           </button>
@@ -1232,45 +1266,67 @@ function App() {
   const [geoPhase, setGeoPhase] = useState<GeoPhase>(() =>
     readUseMyLocationPref() ? 'locating' : 'idle',
   )
+  const [placeLabel, setPlaceLabel] = useState<string | null>(null)
+  const [geoAttempt, setGeoAttempt] = useState(0)
 
   const useVirginiaBeach = useCallback(() => {
     writeUseMyLocationPref(false)
     setPreferMyLocation(false)
     setCoords(VB_COORDS)
     setLocationSource('virginia-beach')
+    setPlaceLabel(null)
     setGeoPhase('idle')
   }, [])
 
   const useMyLocation = useCallback(() => {
     writeUseMyLocationPref(true)
     setPreferMyLocation(true)
+    setGeoAttempt((n) => n + 1)
   }, [])
 
   useEffect(() => {
     if (!preferMyLocation) return
+    const ctrl = new AbortController()
     let cancelled = false
     setGeoPhase('locating')
-    requestBrowserLocation()
-      .then((next) => {
+    setPlaceLabel(null)
+    ;(async () => {
+      try {
+        const next = await requestBrowserLocation()
         if (cancelled) return
         setCoords(next)
         setLocationSource('browser')
-        setGeoPhase('ready')
-      })
-      .catch((err: unknown) => {
+        let label: string | null = null
+        try {
+          label = await fetchNwsPointLabel(
+            next.latitude,
+            next.longitude,
+            ctrl.signal,
+          )
+        } catch {
+          label = null
+        }
         if (cancelled) return
+        setPlaceLabel(label)
+        setGeoPhase('ready')
+      } catch (err: unknown) {
+        if (cancelled) return
+        if (err instanceof Error && err.name === 'AbortError') return
         setCoords(VB_COORDS)
         setLocationSource('virginia-beach')
+        setPlaceLabel(null)
         const code =
           err && typeof err === 'object' && 'code' in err
             ? Number((err as { code: unknown }).code)
             : NaN
         setGeoPhase(code === 1 ? 'denied' : 'unavailable')
-      })
+      }
+    })()
     return () => {
       cancelled = true
+      ctrl.abort()
     }
-  }, [preferMyLocation])
+  }, [preferMyLocation, geoAttempt])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -1510,10 +1566,9 @@ function App() {
               </div>
               <p className="score-summary__blurb">{score.blurb}</p>
               <LocationPrefControl
-                preferMyLocation={preferMyLocation}
                 source={locationSource}
                 phase={geoPhase}
-                coords={coords}
+                placeLabel={placeLabel}
                 onUseMyLocation={useMyLocation}
                 onUseVirginiaBeach={useVirginiaBeach}
               />
@@ -1526,7 +1581,14 @@ function App() {
               />
             </div>
 
-            <WindyMapCard />
+            <WindyMapCard
+              latitude={coords.latitude}
+              longitude={coords.longitude}
+              usingCurrentLocation={
+                locationSource === 'browser' && geoPhase === 'ready'
+              }
+              placeLabel={placeLabel}
+            />
           </div>
 
           <aside className="panels" aria-label="Condition panels">

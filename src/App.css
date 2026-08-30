@@ -259,6 +259,11 @@
 }
 
 .score-summary__loc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.7rem;
+  row-gap: 0.18rem;
   margin: 0.32rem 0 0;
   font-size: 0.75rem;
   font-weight: 500;
@@ -341,12 +346,18 @@
   }
 
   .dashboard__left .score-summary__value {
-    font-size: clamp(2.35rem, 11.5vw, 3.05rem);
-    min-width: 3.9rem;
-    min-height: 2.7rem;
+    font-size: clamp(2.05rem, 9.5vw, 2.65rem);
+    line-height: 1;
+    min-width: 4.5rem;
+    min-height: 3.15rem;
     width: auto;
-    padding: 0.14rem 0.62rem 0.16rem;
+    padding: 0 0.55rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     overflow: visible;
+    flex-shrink: 0;
+    box-sizing: border-box;
   }
 
   .dashboard__left .score-summary__status {
