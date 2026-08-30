@@ -216,7 +216,7 @@ type LivePhase = 'loading' | 'error' | 'ready'
 
 type GeoCoords = { latitude: number; longitude: number }
 type LocationSource = 'virginia-beach' | 'browser'
-type GeoPhase = 'idle' | 'locating' | 'ready' | 'denied' | 'unavailable'
+type GeoPhase = 'idle' | 'locating' | 'ready' | 'denied' | 'unavailable' | 'timeout'
 
 const VB_COORDS: GeoCoords = { latitude: VB_LAT, longitude: VB_LON }
 
@@ -240,7 +240,7 @@ function writeUseMyLocationPref(enabled: boolean): void {
 function requestBrowserLocation(): Promise<GeoCoords> {
   return new Promise((resolve, reject) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      reject(new Error('unavailable'))
+      reject({ code: 2 })
       return
     }
     navigator.geolocation.getCurrentPosition(
@@ -250,7 +250,7 @@ function requestBrowserLocation(): Promise<GeoCoords> {
           longitude: pos.coords.longitude,
         }),
       (err) => reject(err),
-      { enableHighAccuracy: false, maximumAge: 300_000, timeout: 12_000 },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
     )
   })
 }
@@ -1197,11 +1197,19 @@ function LocationPrefControl(props: {
   const { source, phase, placeLabel, onUseMyLocation, onUseVirginiaBeach } = props
   const locating = phase === 'locating'
   const usingBrowser = source === 'browser' && phase === 'ready'
-  const unavailable = phase === 'denied' || phase === 'unavailable'
+  const failed =
+    phase === 'denied' || phase === 'unavailable' || phase === 'timeout'
 
   const viewingCurrent = placeLabel
     ? `Viewing: ${placeLabel} · Current location`
     : 'Viewing: Current location'
+
+  const failMessage =
+    phase === 'denied'
+      ? 'Location permission denied — using Virginia Beach'
+      : phase === 'timeout'
+        ? 'Location timed out — using Virginia Beach'
+        : 'Location unavailable — using Virginia Beach'
 
   return (
     <p className="score-summary__loc">
@@ -1214,15 +1222,15 @@ function LocationPrefControl(props: {
           </button>
         </>
       )}
-      {unavailable && (
+      {failed && (
         <>
-          <span>Location unavailable — using Virginia Beach</span>
+          <span>{failMessage}</span>
           <button type="button" onClick={onUseMyLocation}>
             Retry location
           </button>
         </>
       )}
-      {!locating && !usingBrowser && !unavailable && (
+      {!locating && !usingBrowser && !failed && (
         <>
           <span>Viewing: Virginia Beach, VA · Default</span>
           <button type="button" onClick={onUseMyLocation}>
@@ -1319,7 +1327,9 @@ function App() {
           err && typeof err === 'object' && 'code' in err
             ? Number((err as { code: unknown }).code)
             : NaN
-        setGeoPhase(code === 1 ? 'denied' : 'unavailable')
+        setGeoPhase(
+          code === 1 ? 'denied' : code === 3 ? 'timeout' : 'unavailable',
+        )
       }
     })()
     return () => {
