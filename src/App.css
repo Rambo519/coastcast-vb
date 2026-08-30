@@ -346,12 +346,13 @@
   }
 
   .dashboard__left .score-summary__value {
-    font-size: clamp(2.05rem, 9.5vw, 2.65rem);
+    font-size: clamp(1.7rem, 8vw, 2.2rem);
     line-height: 1;
-    min-width: 4.5rem;
-    min-height: 3.15rem;
+    letter-spacing: -0.04em;
+    min-width: 5.15rem;
+    min-height: 3.5rem;
     width: auto;
-    padding: 0 0.55rem;
+    padding: 0.22rem 0.7rem;
     display: flex;
     align-items: center;
     justify-content: center;
