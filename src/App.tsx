@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import './App.css'
 
 const VB_LAT = 36.8529
@@ -597,6 +597,21 @@ const metaMuted: React.CSSProperties = {
   lineHeight: 1.4,
 }
 
+function formatUpdatedFooter(source: string, fetchedAt: Date | null): string {
+  if (fetchedAt == null || Number.isNaN(fetchedAt.getTime())) {
+    return `UPDATED · ${source} · —`
+  }
+  const datePart = fetchedAt
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    .replace(/\./g, '')
+    .toUpperCase()
+  const timePart = fetchedAt
+    .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    .replace(/\u202f/g, '\u00A0')
+    .replace(/ /g, '\u00A0')
+  return `UPDATED · ${source} · ${datePart} · ${timePart}`
+}
+
 const badgeBase: React.CSSProperties = {
   flexShrink: 0,
   fontSize: '0.65rem',
@@ -720,7 +735,7 @@ function QuakesCard(props: {
   usingCurrentLocation: boolean
   placeLabel: string | null
 }) {
-  const { phase, items, errorMessage, usingCurrentLocation, placeLabel } = props
+  const { phase, items, errorMessage, fetchedAt, usingCurrentLocation, placeLabel } = props
   const shown = items.slice(0, 3)
   const radiusPhrase = quakeRadiusPhrase(usingCurrentLocation, placeLabel)
 
@@ -816,7 +831,7 @@ function QuakesCard(props: {
         </div>
       )}
 
-      <p className="card-footer">UPDATED</p>
+      <p className="card-footer">{formatUpdatedFooter('USGS', fetchedAt)}</p>
     </section>
   )
 }
@@ -827,7 +842,7 @@ function NwsAlertsCard(props: {
   errorMessage: string
   fetchedAt: Date | null
 }) {
-  const { phase, alerts, errorMessage } = props
+  const { phase, alerts, errorMessage, fetchedAt } = props
   const shown = alerts.slice(0, 5)
 
   let badge: { label: string; style: React.CSSProperties }
@@ -939,7 +954,7 @@ function NwsAlertsCard(props: {
         </div>
       )}
 
-      <p className="card-footer">UPDATED</p>
+      <p className="card-footer">{formatUpdatedFooter('NWS', fetchedAt)}</p>
     </section>
   )
 }
@@ -950,7 +965,7 @@ function HurricanesCard(props: {
   errorMessage: string
   fetchedAt: Date | null
 }) {
-  const { phase, storms, errorMessage } = props
+  const { phase, storms, errorMessage, fetchedAt } = props
   const shown = storms.slice(0, 5)
 
   let badge: { label: string; style: React.CSSProperties }
@@ -1062,7 +1077,7 @@ function HurricanesCard(props: {
         </div>
       )}
 
-      <p className="card-footer">UPDATED</p>
+      <p className="card-footer">{formatUpdatedFooter('NHC', fetchedAt)}</p>
     </section>
   )
 }
@@ -1161,7 +1176,7 @@ function ForecastCard(props: {
   errorMessage: string
   fetchedAt: Date | null
 }) {
-  const { phase, days, errorMessage } = props
+  const { phase, days, errorMessage, fetchedAt } = props
 
   let badge: { label: string; style: React.CSSProperties }
   if (phase === 'loading') {
@@ -1250,7 +1265,7 @@ function ForecastCard(props: {
         </div>
       )}
 
-      <p className="card-footer">UPDATED</p>
+      <p className="card-footer">{formatUpdatedFooter('NWS', fetchedAt)}</p>
     </section>
   )
 }
@@ -1306,8 +1321,109 @@ function SkywatchCard() {
         <p className="skywatch__hint">Best viewing: after midnight</p>
       </div>
 
-      <p className="card-footer">UPDATED</p>
+      <p className="card-footer">UPDATED · SKYWATCH · —</p>
     </section>
+  )
+}
+
+function scoreTickerItems(blurb: string): string[] {
+  const trimmed = blurb.trim().replace(/\.$/u, '')
+  if (trimmed.startsWith('Quiet overall')) {
+    return ['No nearby quakes', 'No active weather alerts', 'No Atlantic tropical systems']
+  }
+  if (trimmed.startsWith('Checking latest conditions')) {
+    return ['Checking latest conditions']
+  }
+  if (trimmed.startsWith('Conditions around')) {
+    return [trimmed]
+  }
+  return trimmed
+    .split(', ')
+    .map((s) => s.replace(/\.$/u, '').trim())
+    .filter(Boolean)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+}
+
+function statusDotClass(status: string): string {
+  const key = status.toLowerCase()
+  if (key === 'calm') return 'score-ticker__dot--calm'
+  if (key === 'guarded') return 'score-ticker__dot--guarded'
+  if (key === 'elevated') return 'score-ticker__dot--elevated'
+  if (key === 'high') return 'score-ticker__dot--high'
+  return 'score-ticker__dot--loading'
+}
+
+function ScoreStatusTicker(props: { status: string; blurb: string }) {
+  const { status, blurb } = props
+  const items = scoreTickerItems(blurb)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const measureRef = useRef<HTMLDivElement>(null)
+  const [overflowing, setOverflowing] = useState(false)
+  const [reduceMotion, setReduceMotion] = useState(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const sync = () => setReduceMotion(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+
+  useLayoutEffect(() => {
+    const vp = viewportRef.current
+    const measure = measureRef.current
+    if (!vp || !measure) return
+    const check = () => {
+      setOverflowing(measure.scrollWidth > vp.clientWidth + 1)
+    }
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(vp)
+    ro.observe(measure)
+    return () => ro.disconnect()
+  }, [status, blurb])
+
+  const scrolling = overflowing && !reduceMotion
+  const wrapping = overflowing && reduceMotion
+
+  const line = (
+    <>
+      <span className={`score-ticker__dot ${statusDotClass(status)}`} aria-hidden="true" />
+      <span className="score-ticker__status">{status.toUpperCase()}</span>
+      {items.map((item, i) => (
+        <span key={`${item}-${i}`} className="score-ticker__seg">
+          <span className="score-ticker__sep" aria-hidden="true">
+            ·
+          </span>
+          {item}
+        </span>
+      ))}
+    </>
+  )
+
+  return (
+    <div
+      className={
+        wrapping ? 'score-ticker score-ticker--wrap' : 'score-ticker'
+      }
+      ref={viewportRef}
+    >
+      <div className="score-ticker__measure" ref={measureRef} aria-hidden="true">
+        {line}
+      </div>
+      <div
+        className={
+          scrolling ? 'score-ticker__track is-scroll' : 'score-ticker__track'
+        }
+      >
+        <span className="score-ticker__copy">{line}</span>
+        {scrolling ? (
+          <span className="score-ticker__copy" aria-hidden="true">
+            {line}
+          </span>
+        ) : null}
+      </div>
+    </div>
   )
 }
 
@@ -1798,7 +1914,7 @@ function App() {
                   <p className="score-summary__status">Status · {score.status}</p>
                 </div>
               </div>
-              <p className="score-summary__blurb">{score.blurb}</p>
+              <ScoreStatusTicker status={score.status} blurb={score.blurb} />
               <LocationPrefControl
                 source={locationSource}
                 phase={geoPhase}
