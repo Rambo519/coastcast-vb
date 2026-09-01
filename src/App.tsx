@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 
 const VB_LAT = 36.8529
 const VB_LON = -75.978
 
 const USE_MY_LOCATION_PREF_KEY = 'coastcast-use-my-location'
+const CHOSE_VB_PREF_KEY = 'coastcast-chose-virginia-beach'
+const LOCATION_ONBOARDED_PREF_KEY = 'coastcast-location-onboarded'
+const MOBILE_LOC_MQ = '(max-width: 600px)'
 
 const USGS_QUAKES_URL =
   'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=36.8529&longitude=-75.9780&maxradiuskm=805&minmagnitude=2.5&orderby=time&limit=20'
@@ -262,6 +265,51 @@ function writeUseMyLocationPref(enabled: boolean): void {
   }
 }
 
+function readPrefFlag(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writePrefFlag(key: string, enabled: boolean): void {
+  try {
+    if (enabled) window.localStorage.setItem(key, '1')
+    else window.localStorage.removeItem(key)
+  } catch {
+    /* private mode / blocked storage */
+  }
+}
+
+function readChoseVirginiaBeachPref(): boolean {
+  return readPrefFlag(CHOSE_VB_PREF_KEY)
+}
+
+function writeChoseVirginiaBeachPref(enabled: boolean): void {
+  writePrefFlag(CHOSE_VB_PREF_KEY, enabled)
+}
+
+function readLocationOnboardedPref(): boolean {
+  return readPrefFlag(LOCATION_ONBOARDED_PREF_KEY)
+}
+
+function writeLocationOnboardedPref(enabled: boolean): void {
+  writePrefFlag(LOCATION_ONBOARDED_PREF_KEY, enabled)
+}
+
+function isMobileLocationViewport(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia(MOBILE_LOC_MQ).matches
+}
+
+function shouldShowMobileLocationOnboard(): boolean {
+  if (!isMobileLocationViewport()) return false
+  if (readUseMyLocationPref() || readChoseVirginiaBeachPref() || readLocationOnboardedPref()) {
+    return false
+  }
+  return true
+}
+
 function requestBrowserLocation(): Promise<GeoCoords> {
   return new Promise((resolve, reject) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -278,6 +326,31 @@ function requestBrowserLocation(): Promise<GeoCoords> {
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
     )
   })
+}
+
+function geoPhaseFromError(err: unknown): GeoPhase {
+  const code =
+    err && typeof err === 'object' && 'code' in err
+      ? Number((err as { code: unknown }).code)
+      : NaN
+  return code === 1 ? 'denied' : code === 3 ? 'timeout' : 'unavailable'
+}
+
+async function geolocationPermissionState(): Promise<
+  'granted' | 'denied' | 'prompt' | 'unknown'
+> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.permissions?.query) {
+      return 'unknown'
+    }
+    const status = await navigator.permissions.query({ name: 'geolocation' })
+    if (status.state === 'granted' || status.state === 'denied' || status.state === 'prompt') {
+      return status.state
+    }
+    return 'unknown'
+  } catch {
+    return 'unknown'
+  }
 }
 
 type UsgsFeature = {
@@ -1331,6 +1404,45 @@ function LocationPrefControl(props: {
   )
 }
 
+function LocationOnboardPrompt(props: {
+  locating: boolean
+  onAllowLocation: () => void
+  onUseVirginiaBeach: () => void
+}) {
+  const { locating, onAllowLocation, onUseVirginiaBeach } = props
+  return (
+    <div className="loc-onboard" role="dialog" aria-modal="true" aria-labelledby="loc-onboard-title">
+      <div className="loc-onboard__card">
+        <h2 id="loc-onboard-title" className="loc-onboard__title">
+          Use your location?
+        </h2>
+        <p className="loc-onboard__body">
+          CoastCast can use your location for local alerts, radar, forecasts, and nearby
+          events.
+        </p>
+        <div className="loc-onboard__actions">
+          <button
+            type="button"
+            className="loc-onboard__allow"
+            onClick={onAllowLocation}
+            disabled={locating}
+          >
+            {locating ? 'Locating...' : 'Allow location'}
+          </button>
+          <button
+            type="button"
+            className="loc-onboard__vb"
+            onClick={onUseVirginiaBeach}
+            disabled={locating}
+          >
+            Use Virginia Beach
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [quakePhase, setQuakePhase] = useState<LivePhase>('loading')
   const [quakes, setQuakes] = useState<UsgsFeature[]>([])
@@ -1356,75 +1468,138 @@ function App() {
   const [forecastError, setForecastError] = useState('')
   const [forecastFetchedAt, setForecastFetchedAt] = useState<Date | null>(null)
 
-  const [preferMyLocation, setPreferMyLocation] = useState(readUseMyLocationPref)
+  const [preferMyLocation, setPreferMyLocation] = useState(false)
   const [coords, setCoords] = useState<GeoCoords>(VB_COORDS)
   const [locationSource, setLocationSource] = useState<LocationSource>('virginia-beach')
-  const [geoPhase, setGeoPhase] = useState<GeoPhase>(() =>
-    readUseMyLocationPref() ? 'locating' : 'idle',
-  )
+  const [geoPhase, setGeoPhase] = useState<GeoPhase>('idle')
   const [placeLabel, setPlaceLabel] = useState<string | null>(null)
-  const [geoAttempt, setGeoAttempt] = useState(0)
+  const [showLocationOnboard, setShowLocationOnboard] = useState(
+    shouldShowMobileLocationOnboard,
+  )
+  const geoSeq = useRef(0)
+  const nwsLabelCtrl = useRef<AbortController | null>(null)
+  const userInvokedGeo = useRef(false)
 
-  const useVirginiaBeach = useCallback(() => {
+  const fallbackToVirginiaBeach = useCallback((phase: GeoPhase) => {
+    nwsLabelCtrl.current?.abort()
     writeUseMyLocationPref(false)
     setPreferMyLocation(false)
     setCoords(VB_COORDS)
     setLocationSource('virginia-beach')
     setPlaceLabel(null)
-    setGeoPhase('idle')
+    setGeoPhase(phase)
   }, [])
 
-  const useMyLocation = useCallback(() => {
+  const applyBrowserPosition = useCallback(async (next: GeoCoords, seq: number) => {
+    if (seq !== geoSeq.current) return
     writeUseMyLocationPref(true)
+    writeChoseVirginiaBeachPref(false)
     setPreferMyLocation(true)
-    setGeoAttempt((n) => n + 1)
+    setCoords(next)
+    setLocationSource('browser')
+    setShowLocationOnboard(false)
+    nwsLabelCtrl.current?.abort()
+    const ctrl = new AbortController()
+    nwsLabelCtrl.current = ctrl
+    let label: string | null = null
+    try {
+      label = await fetchNwsPointLabel(next.latitude, next.longitude, ctrl.signal)
+    } catch {
+      label = null
+    }
+    if (seq !== geoSeq.current) return
+    setPlaceLabel(label)
+    setGeoPhase('ready')
+  }, [])
+
+  const failBrowserPosition = useCallback(
+    (err: unknown, seq: number) => {
+      if (seq !== geoSeq.current) return
+      if (err instanceof Error && err.name === 'AbortError') return
+      setShowLocationOnboard(false)
+      fallbackToVirginiaBeach(geoPhaseFromError(err))
+    },
+    [fallbackToVirginiaBeach],
+  )
+
+  const useVirginiaBeach = useCallback(() => {
+    geoSeq.current += 1
+    setShowLocationOnboard(false)
+    fallbackToVirginiaBeach('idle')
+  }, [fallbackToVirginiaBeach])
+
+  const useMyLocation = useCallback(() => {
+    userInvokedGeo.current = true
+    const seq = ++geoSeq.current
+    setPreferMyLocation(true)
+    setGeoPhase('locating')
+    setPlaceLabel(null)
+    requestBrowserLocation()
+      .then((next) => applyBrowserPosition(next, seq))
+      .catch((err) => failBrowserPosition(err, seq))
+  }, [applyBrowserPosition, failBrowserPosition])
+
+  const onboardAllowLocation = useCallback(() => {
+    writeLocationOnboardedPref(true)
+    writeChoseVirginiaBeachPref(false)
+    useMyLocation()
+  }, [useMyLocation])
+
+  const onboardUseVirginiaBeach = useCallback(() => {
+    writeLocationOnboardedPref(true)
+    writeChoseVirginiaBeachPref(true)
+    useVirginiaBeach()
+  }, [useVirginiaBeach])
+
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_LOC_MQ)
+    const sync = () => {
+      setShowLocationOnboard(shouldShowMobileLocationOnboard())
+    }
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
   }, [])
 
   useEffect(() => {
-    if (!preferMyLocation) return
-    const ctrl = new AbortController()
+    if (!showLocationOnboard) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [showLocationOnboard])
+
+  useEffect(() => {
+    if (!readUseMyLocationPref()) return
     let cancelled = false
-    setGeoPhase('locating')
-    setPlaceLabel(null)
     ;(async () => {
-      try {
-        const next = await requestBrowserLocation()
-        if (cancelled) return
-        setCoords(next)
-        setLocationSource('browser')
-        let label: string | null = null
-        try {
-          label = await fetchNwsPointLabel(
-            next.latitude,
-            next.longitude,
-            ctrl.signal,
-          )
-        } catch {
-          label = null
-        }
-        if (cancelled) return
-        setPlaceLabel(label)
-        setGeoPhase('ready')
-      } catch (err: unknown) {
-        if (cancelled) return
-        if (err instanceof Error && err.name === 'AbortError') return
-        setCoords(VB_COORDS)
-        setLocationSource('virginia-beach')
+      const perm = await geolocationPermissionState()
+      if (cancelled || userInvokedGeo.current) return
+      if (perm === 'granted') {
+        const seq = ++geoSeq.current
+        setPreferMyLocation(true)
+        setGeoPhase('locating')
         setPlaceLabel(null)
-        const code =
-          err && typeof err === 'object' && 'code' in err
-            ? Number((err as { code: unknown }).code)
-            : NaN
-        setGeoPhase(
-          code === 1 ? 'denied' : code === 3 ? 'timeout' : 'unavailable',
-        )
+        try {
+          const next = await requestBrowserLocation()
+          await applyBrowserPosition(next, seq)
+        } catch (err: unknown) {
+          failBrowserPosition(err, seq)
+        }
+        return
       }
+      if (!isMobileLocationViewport()) return
+      nwsLabelCtrl.current?.abort()
+      setPreferMyLocation(false)
+      setCoords(VB_COORDS)
+      setLocationSource('virginia-beach')
+      setPlaceLabel(null)
+      setGeoPhase(perm === 'denied' ? 'denied' : 'unavailable')
     })()
     return () => {
       cancelled = true
-      ctrl.abort()
     }
-  }, [preferMyLocation, geoAttempt])
+  }, [applyBrowserPosition, failBrowserPosition])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -1718,6 +1893,13 @@ function App() {
           </aside>
         </div>
       </main>
+      {showLocationOnboard ? (
+        <LocationOnboardPrompt
+          locating={geoPhase === 'locating'}
+          onAllowLocation={onboardAllowLocation}
+          onUseVirginiaBeach={onboardUseVirginiaBeach}
+        />
+      ) : null}
     </div>
   )
 }
