@@ -920,6 +920,60 @@
   opacity: 0.7;
 }
 
+.hurricanes-card a {
+  text-decoration: none;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.hurricanes-card a:hover {
+  border-bottom-color: rgba(56, 189, 248, 0.55);
+}
+
+.hurricanes-card .nhc-forecast-ext {
+  font-size: 0.78em;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.hurricane-relevance {
+  margin: 0.2rem 0 0;
+  font-size: 0.8125rem;
+  color: rgba(200, 210, 225, 0.7);
+  line-height: 1.4;
+}
+
+.hurricane-stats {
+  margin: 0.5rem 0 0;
+  display: grid;
+  gap: 0.18rem 0;
+}
+
+.hurricane-stats__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.hurricane-stats dt {
+  margin: 0;
+  color: rgba(200, 210, 225, 0.62);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.hurricane-stats dd {
+  margin: 0;
+  text-align: right;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.hurricane-link {
+  margin: 0.55rem 0 0;
+}
+
 /* Last line in each panel: compact “UPDATED” footer */
 .panels .panel:not(.skywatch-card) > p:last-child,
 .dashboard__top > .panel > p:last-child {

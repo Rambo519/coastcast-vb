@@ -1,5 +1,19 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import {
+  compareEvals,
+  evaluateStorm,
+  formatMiles,
+  isAtlanticNhcStorm,
+  loadStormProducts,
+  nhcFiniteNumber,
+  relevancePlacePhrase,
+  tropicalWatchWarningFromAlerts,
+  type HurricaneEval,
+  type HurricaneRelevance,
+  type NhcStorm,
+  type NhcStormProducts,
+} from './nhcRelevance'
 
 const VB_LAT = 36.8529
 const VB_LON = -75.978
@@ -383,24 +397,6 @@ function nwsAlertOfficialUrl(f: NwsAlertFeature): string | null {
   return null
 }
 
-/** Subset of NHC CurrentStorms.json storm objects we read (see NHC JSON reference). */
-type NhcStorm = {
-  id?: string
-  binNumber?: string
-  name?: string
-  classification?: string
-  intensity?: number
-  pressure?: number
-  latitude?: string
-  longitude?: string
-}
-
-function isAtlanticNhcStorm(s: NhcStorm): boolean {
-  const bin = (s.binNumber ?? '').toUpperCase()
-  if (bin.startsWith('AT')) return true
-  const sid = (s.id ?? '').toLowerCase()
-  return sid.startsWith('al')
-}
 
 /**
  * NWS api.weather.gov does not ship marine zone text forecasts yet; this uses the
@@ -434,21 +430,6 @@ function isMarineCoastalHazardAlert(f: NwsAlertFeature): boolean {
     'extreme wind',
   ]
   return needles.some((n) => blob.includes(n))
-}
-
-function nhcClassificationLabel(code: string | null | undefined): string {
-  if (!code) return 'system'
-  const u = code.toUpperCase()
-  const labels: Record<string, string> = {
-    TD: 'Tropical depression',
-    TS: 'Tropical storm',
-    HU: 'Hurricane',
-    STD: 'Subtropical depression',
-    STS: 'Subtropical storm',
-    PTC: 'Potential tropical cyclone',
-    PC: 'Post-tropical cyclone',
-  }
-  return labels[u] ?? u
 }
 
 function clamp(n: number, min: number, max: number) {
@@ -1131,63 +1112,131 @@ function NwsAlertsCard(props: {
   )
 }
 
+function hurricaneBadge(label: string, phase: LivePhase): React.CSSProperties {
+  if (phase === 'loading') {
+    return {
+      ...badgeBase,
+      background: 'rgba(200, 200, 210, 0.08)',
+      borderColor: 'rgba(255, 255, 255, 0.12)',
+      color: 'rgba(200, 210, 225, 0.75)',
+    }
+  }
+  if (phase === 'error') {
+    return {
+      ...badgeBase,
+      background: 'rgba(240, 120, 120, 0.12)',
+      borderColor: 'rgba(240, 140, 140, 0.4)',
+      color: 'rgba(255, 190, 190, 0.95)',
+    }
+  }
+  if (label === 'HIGH' || label === 'ELEVATED') {
+    return {
+      ...badgeBase,
+      background: 'rgba(240, 190, 110, 0.12)',
+      borderColor: 'rgba(240, 190, 110, 0.35)',
+      color: 'rgba(255, 220, 160, 0.95)',
+    }
+  }
+  return {
+    ...badgeBase,
+    background: 'rgba(120, 190, 255, 0.1)',
+    borderColor: 'rgba(120, 190, 255, 0.3)',
+    color: 'rgba(170, 215, 255, 0.95)',
+  }
+}
+
 function HurricanesCard(props: {
   phase: LivePhase
   storms: NhcStorm[]
   errorMessage: string
   fetchedAt: Date | null
+  latitude: number
+  longitude: number
+  usingCurrentLocation: boolean
+  placeLabel: string | null
+  weatherAlerts: NwsAlertFeature[]
+  weatherAlertPhase: LivePhase
 }) {
-  const { phase, storms, errorMessage, fetchedAt } = props
-  const shown = storms.slice(0, 5)
+  const {
+    phase,
+    storms,
+    errorMessage,
+    fetchedAt,
+    latitude,
+    longitude,
+    usingCurrentLocation,
+    placeLabel,
+    weatherAlerts,
+    weatherAlertPhase,
+  } = props
 
-  let badge: { label: string; style: React.CSSProperties }
-  if (phase === 'loading') {
-    badge = {
-      label: '···',
-      style: {
-        ...badgeBase,
-        background: 'rgba(200, 200, 210, 0.08)',
-        borderColor: 'rgba(255, 255, 255, 0.12)',
-        color: 'rgba(200, 210, 225, 0.75)',
-      },
+  const [productsById, setProductsById] = useState<Record<string, NhcStormProducts>>({})
+  const stormKey = storms
+    .map((s) => {
+      const adv =
+        s.forecastAdvisory?.advNum ??
+        s.forecastTrack?.advNum ??
+        s.lastUpdate ??
+        ''
+      return `${s.id ?? s.name ?? ''}:${adv}`
+    })
+    .join('|')
+
+  useEffect(() => {
+    if (phase !== 'ready' || storms.length === 0) {
+      setProductsById({})
+      return
     }
-  } else if (phase === 'error') {
-    badge = {
-      label: 'Issue',
-      style: {
-        ...badgeBase,
-        background: 'rgba(240, 120, 120, 0.12)',
-        borderColor: 'rgba(240, 140, 140, 0.4)',
-        color: 'rgba(255, 190, 190, 0.95)',
-      },
-    }
-  } else if (shown.length === 0) {
-    badge = {
-      label: 'Clear',
-      style: {
-        ...badgeBase,
-        background: 'rgba(120, 190, 255, 0.1)',
-        borderColor: 'rgba(120, 190, 255, 0.3)',
-        color: 'rgba(170, 215, 255, 0.95)',
-      },
-    }
-  } else {
-    badge = {
-      label: 'Active',
-      style: {
-        ...badgeBase,
-        background: 'rgba(240, 190, 110, 0.12)',
-        borderColor: 'rgba(240, 190, 110, 0.35)',
-        color: 'rgba(255, 220, 160, 0.95)',
-      },
-    }
-  }
+    const ctrl = new AbortController()
+    ;(async () => {
+      const entries = await Promise.all(
+        storms.map(async (storm, i) => {
+          const id = storm.id ?? storm.name ?? `storm-${i}`
+          try {
+            return [id, await loadStormProducts(storm, ctrl.signal)] as const
+          } catch (e) {
+            if (e instanceof Error && e.name === 'AbortError') return null
+            return [id, undefined] as const
+          }
+        }),
+      )
+      if (ctrl.signal.aborted) return
+      const next: Record<string, NhcStormProducts> = {}
+      for (const row of entries) {
+        if (!row || !row[1]) continue
+        next[row[0]] = row[1]
+      }
+      setProductsById(next)
+    })()
+    return () => ctrl.abort()
+  }, [phase, stormKey, storms])
+
+  const location = useMemo(
+    () => ({ lat: latitude, lon: longitude }),
+    [latitude, longitude],
+  )
+  const nwsWw =
+    weatherAlertPhase === 'ready' ? tropicalWatchWarningFromAlerts(weatherAlerts) : null
+  const evals = useMemo(() => {
+    const rows: HurricaneEval[] = storms.map((storm, i) => {
+      const id = storm.id ?? storm.name ?? `storm-${i}`
+      return evaluateStorm(storm, location, productsById[id], nwsWw)
+    })
+    rows.sort(compareEvals)
+    return rows
+  }, [storms, location, productsById, nwsWw])
+
+  const primary = evals[0] ?? null
+  const extras = evals.slice(1, 4)
+  const relevanceLabel: HurricaneRelevance | 'Issue' | '···' =
+    phase === 'loading' ? '···' : phase === 'error' ? 'Issue' : (primary?.relevance ?? 'CLEAR')
+  const place = relevancePlacePhrase(usingCurrentLocation, placeLabel)
 
   return (
-    <section className="card panel">
+    <section className="card panel hurricanes-card">
       <div style={panelHead}>
         <h2 className="card__title">Hurricanes</h2>
-        <span style={badge.style}>{badge.label}</span>
+        <span style={hurricaneBadge(relevanceLabel, phase)}>{relevanceLabel}</span>
       </div>
 
       {phase === 'loading' && (
@@ -1202,47 +1251,73 @@ function HurricanesCard(props: {
         </p>
       )}
 
-      {phase === 'ready' && shown.length === 0 && (
+      {phase === 'ready' && !primary && (
         <div className="panel__body">
           <p style={{ margin: 0 }}>No active Atlantic tropical systems right now.</p>
           <p style={metaMuted}>NHC Atlantic basin</p>
         </div>
       )}
 
-      {phase === 'ready' && shown.length > 0 && (
+      {phase === 'ready' && primary && (
         <div className="panel__body">
           <p style={{ margin: 0 }}>
-            Atlantic systems from NOAA/NHC status (summary positions — not a VB
-            track forecast):
+            <strong>{primary.headline}</strong>
           </p>
-          {shown.map((s, i) => {
-            const name = (s.name && s.name.trim()) || 'Unnamed'
-            const cls = nhcClassificationLabel(s.classification)
-            const kt =
-              typeof s.intensity === 'number' && Number.isFinite(s.intensity)
-                ? `${s.intensity} kt`
-                : 'intensity n/a'
-            const mb =
-              typeof s.pressure === 'number' && Number.isFinite(s.pressure)
-                ? `${s.pressure} mb`
-                : 'pressure n/a'
-            const lat = s.latitude?.trim() || 'lat n/a'
-            const lon = s.longitude?.trim()
-            const where = lon ? `${lat} · ${lon}` : lat
+          <p className="hurricane-relevance">Relevance to {place}</p>
+          <dl className="hurricane-stats">
+            <div className="hurricane-stats__row">
+              <dt>Current distance</dt>
+              <dd>{formatMiles(primary.currentMiles)}</dd>
+            </div>
+            <div className="hurricane-stats__row">
+              <dt>Closest forecast</dt>
+              <dd>{formatMiles(primary.closestForecastMiles)}</dd>
+            </div>
+            <div className="hurricane-stats__row">
+              <dt>Official cone</dt>
+              <dd>{primary.cone}</dd>
+            </div>
+            <div className="hurricane-stats__row">
+              <dt>Watch / warning</dt>
+              <dd>{primary.watchWarning}</dd>
+            </div>
+            <div className="hurricane-stats__row">
+              <dt>Trend</dt>
+              <dd>{primary.trend}</dd>
+            </div>
+          </dl>
+          {primary.officialUrl ? (
+            <p className="hurricane-link">
+              <a
+                href={primary.officialUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                NHC forecast
+                <span className="nhc-forecast-ext" aria-hidden="true">
+                  {' '}
+                  ↗
+                </span>
+              </a>
+            </p>
+          ) : null}
+          <p style={metaMuted}>
+            Based on official NHC forecast data — CoastCast does not predict storm
+            paths.
+          </p>
+          {extras.map((row, i) => {
+            const kt = nhcFiniteNumber(row.storm.intensity)
             return (
               <p
-                key={s.id ?? `${name}-${i}`}
-                style={{ ...quakeLine, marginTop: i === 0 ? '0.5rem' : '0.45rem' }}
+                key={row.storm.id ?? `${row.headline}-${i}`}
+                style={{ ...quakeLine, marginTop: '0.45rem' }}
               >
-                <strong>{name}</strong>
-                {' — '}
-                {cls}
+                Also: <strong>{row.headline}</strong>
                 {' · '}
-                {kt}
+                {row.relevance}
                 {' · '}
-                {mb}
-                {' · '}
-                {where}
+                closest forecast {formatMiles(row.closestForecastMiles)}
+                {kt != null ? ` · ${kt} kt` : ''}
               </p>
             )
           })}
@@ -2271,6 +2346,12 @@ function App() {
               storms={atlanticStorms}
               errorMessage={nhcError}
               fetchedAt={nhcFetchedAt}
+              latitude={coords.latitude}
+              longitude={coords.longitude}
+              usingCurrentLocation={usingCurrentLocation}
+              placeLabel={placeLabel}
+              weatherAlerts={weatherAlerts}
+              weatherAlertPhase={weatherAlertPhase}
             />
 
             <QuakesCard
