@@ -110,11 +110,11 @@
 }
 
 .score-summary__place {
-  margin: 0.2rem 0 0;
-  font-size: 0.90625rem;
+  margin: 0.1rem 0 0;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--text-muted);
-  line-height: 1.38;
+  line-height: 1.22;
   letter-spacing: 0.018em;
 }
 
@@ -224,8 +224,8 @@
 }
 
 .dashboard__left .score-summary__place {
-  font-size: clamp(1.0625rem, 2.2cqi + 0.68rem, 1.1875rem);
-  line-height: 1.32;
+  font-size: 0.8125rem;
+  line-height: 1.22;
 }
 
 .dashboard__left .score-summary__metric {
@@ -464,8 +464,8 @@
   }
 
   .dashboard__left .score-summary__place {
-    font-size: 0.9375rem;
-    line-height: 1.35;
+    font-size: 0.78125rem;
+    line-height: 1.22;
     white-space: normal;
     overflow-wrap: break-word;
     word-wrap: break-word;
