@@ -15,10 +15,7 @@ function usgsQuakesUrl(lat: number, lon: number): string {
   return `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${latitude}&longitude=${longitude}&maxradiuskm=805&minmagnitude=2.5&orderby=time&limit=20`
 }
 
-/** Virginia Beach oceanfront — NWS active alerts for this point */
-const NWS_ALERTS_URL =
-  'https://api.weather.gov/alerts/active?point=36.8529,-75.9780'
-
+/** NOAA/NWS active alerts for a lat/lon point */
 function nwsActiveAlertsUrl(lat: number, lon: number): string {
   const point =
     lat === VB_LAT && lon === VB_LON
@@ -516,8 +513,8 @@ type ScoreResult = {
 }
 
 /**
- * Live USGS quakes + NWS VB alerts + NHC Atlantic list + marine-style alert subset
- * — 0–100 score, status label, short blurb. Nature / news is not scored.
+ * Live USGS quakes + NWS active-location alerts + NHC Atlantic list + marine-style
+ * alert subset — 0–100 score, status label, short blurb. Forecast / Skywatch are not scored.
  */
 function computeVbScore(input: {
   quakePhase: LivePhase
@@ -526,8 +523,10 @@ function computeVbScore(input: {
   quakes: UsgsFeature[]
   alerts: NwsAlertFeature[]
   atlanticStorms: NhcStorm[]
+  locationName: string
 }): ScoreResult {
-  const { quakePhase, nwsPhase, nhcPhase, quakes, alerts, atlanticStorms } = input
+  const { quakePhase, nwsPhase, nhcPhase, quakes, alerts, atlanticStorms, locationName } =
+    input
 
   if (quakePhase === 'loading' || nwsPhase === 'loading') {
     return {
@@ -585,7 +584,7 @@ function computeVbScore(input: {
       bits.push('no Atlantic tropical systems')
     }
 
-    blurb = bits.length > 0 ? `${bits.join(', ')}.` : 'Conditions around Virginia Beach.'
+    blurb = bits.length > 0 ? `${bits.join(', ')}.` : `Conditions around ${locationName}.`
   }
 
   return { score, status, blurb }
@@ -721,7 +720,7 @@ function QuakesCard(props: {
   usingCurrentLocation: boolean
   placeLabel: string | null
 }) {
-  const { phase, items, errorMessage, fetchedAt, usingCurrentLocation, placeLabel } = props
+  const { phase, items, errorMessage, usingCurrentLocation, placeLabel } = props
   const shown = items.slice(0, 3)
   const radiusPhrase = quakeRadiusPhrase(usingCurrentLocation, placeLabel)
 
@@ -767,14 +766,6 @@ function QuakesCard(props: {
       },
     }
   }
-
-  const footerTime =
-    fetchedAt != null
-      ? fetchedAt.toLocaleString(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        })
-      : null
 
   return (
     <section className="card panel">
@@ -825,11 +816,7 @@ function QuakesCard(props: {
         </div>
       )}
 
-      <p style={metaMuted}>
-        {phase === 'loading' && 'Last updated · loading…'}
-        {phase === 'error' && 'Last updated · —'}
-        {phase === 'ready' && footerTime != null && `Last updated · USGS · ${footerTime}`}
-      </p>
+      <p className="card-footer">UPDATED</p>
     </section>
   )
 }
@@ -840,7 +827,7 @@ function NwsAlertsCard(props: {
   errorMessage: string
   fetchedAt: Date | null
 }) {
-  const { phase, alerts, errorMessage, fetchedAt } = props
+  const { phase, alerts, errorMessage } = props
   const shown = alerts.slice(0, 5)
 
   let badge: { label: string; style: React.CSSProperties }
@@ -885,14 +872,6 @@ function NwsAlertsCard(props: {
       },
     }
   }
-
-  const footerTime =
-    fetchedAt != null
-      ? fetchedAt.toLocaleString(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        })
-      : null
 
   return (
     <section className="card panel nws-alerts-card">
@@ -960,11 +939,7 @@ function NwsAlertsCard(props: {
         </div>
       )}
 
-      <p style={metaMuted}>
-        {phase === 'loading' && 'Last updated · loading…'}
-        {phase === 'error' && 'Last updated · —'}
-        {phase === 'ready' && footerTime != null && `Last updated · NWS · ${footerTime}`}
-      </p>
+      <p className="card-footer">UPDATED</p>
     </section>
   )
 }
@@ -975,7 +950,7 @@ function HurricanesCard(props: {
   errorMessage: string
   fetchedAt: Date | null
 }) {
-  const { phase, storms, errorMessage, fetchedAt } = props
+  const { phase, storms, errorMessage } = props
   const shown = storms.slice(0, 5)
 
   let badge: { label: string; style: React.CSSProperties }
@@ -1020,14 +995,6 @@ function HurricanesCard(props: {
       },
     }
   }
-
-  const footerTime =
-    fetchedAt != null
-      ? fetchedAt.toLocaleString(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        })
-      : null
 
   return (
     <section className="card panel">
@@ -1095,11 +1062,7 @@ function HurricanesCard(props: {
         </div>
       )}
 
-      <p style={metaMuted}>
-        {phase === 'loading' && 'Last updated · loading…'}
-        {phase === 'error' && 'Last updated · —'}
-        {phase === 'ready' && footerTime != null && `Last updated · NHC · ${footerTime}`}
-      </p>
+      <p className="card-footer">UPDATED</p>
     </section>
   )
 }
@@ -1198,7 +1161,7 @@ function ForecastCard(props: {
   errorMessage: string
   fetchedAt: Date | null
 }) {
-  const { phase, days, errorMessage, fetchedAt } = props
+  const { phase, days, errorMessage } = props
 
   let badge: { label: string; style: React.CSSProperties }
   if (phase === 'loading') {
@@ -1242,14 +1205,6 @@ function ForecastCard(props: {
       },
     }
   }
-
-  const footerTime =
-    fetchedAt != null
-      ? fetchedAt.toLocaleString(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        })
-      : null
 
   return (
     <section className="card panel panel--nature">
@@ -1295,12 +1250,7 @@ function ForecastCard(props: {
         </div>
       )}
 
-      <p style={metaMuted}>
-        {phase === 'loading' && 'Last updated · loading…'}
-        {phase === 'error' && 'Last updated · —'}
-        {phase === 'ready' && footerTime != null && `Last updated · NWS · ${footerTime}`}
-        {phase === 'ready' && footerTime == null && 'Last updated · —'}
-      </p>
+      <p className="card-footer">UPDATED</p>
     </section>
   )
 }
@@ -1356,7 +1306,7 @@ function SkywatchCard() {
         <p className="skywatch__hint">Best viewing: after midnight</p>
       </div>
 
-      <p style={metaMuted}>Virginia Beach sky conditions</p>
+      <p className="card-footer">UPDATED</p>
     </section>
   )
 }
@@ -1459,9 +1409,6 @@ function App() {
   const [quakePhase, setQuakePhase] = useState<LivePhase>('loading')
   const [quakes, setQuakes] = useState<UsgsFeature[]>([])
   const [quakeError, setQuakeError] = useState('')
-
-  const [nwsPhase, setNwsPhase] = useState<LivePhase>('loading')
-  const [nwsAlerts, setNwsAlerts] = useState<NwsAlertFeature[]>([])
 
   const [weatherAlertPhase, setWeatherAlertPhase] = useState<LivePhase>('loading')
   const [weatherAlerts, setWeatherAlerts] = useState<NwsAlertFeature[]>([])
@@ -1656,32 +1603,6 @@ function App() {
   ])
 
   useEffect(() => {
-    const ctrl = new AbortController()
-    ;(async () => {
-      try {
-        const res = await fetch(NWS_ALERTS_URL, {
-          signal: ctrl.signal,
-          headers: NWS_FETCH_HEADERS,
-        })
-        if (!res.ok) throw new Error(`NWS responded with ${res.status}`)
-        const data: { features?: NwsAlertFeature[] } = await res.json()
-        const raw = Array.isArray(data.features) ? data.features : []
-        const useful = raw.filter(
-          (f) =>
-            f.properties != null &&
-            (f.properties.headline || f.properties.event),
-        )
-        setNwsAlerts(useful)
-        setNwsPhase('ready')
-      } catch (e) {
-        if (e instanceof Error && e.name === 'AbortError') return
-        setNwsPhase('error')
-      }
-    })()
-    return () => ctrl.abort()
-  }, [])
-
-  useEffect(() => {
     if (preferMyLocation && geoPhase === 'locating') {
       setWeatherAlertPhase('loading')
       return
@@ -1836,13 +1757,23 @@ function App() {
     coords.longitude,
   ])
 
+  const usingCurrentLocation =
+    locationSource === 'browser' && geoPhase === 'ready'
+  const scoreLocationName = usingCurrentLocation
+    ? (placeLabel ?? 'your location')
+    : 'Virginia Beach'
+  const scorePlaceLine = usingCurrentLocation
+    ? `${placeLabel ?? 'Your location'} coastal conditions`
+    : 'Virginia Beach coastal conditions'
+
   const score = computeVbScore({
     quakePhase,
-    nwsPhase,
+    nwsPhase: weatherAlertPhase,
     nhcPhase,
     quakes,
-    alerts: nwsAlerts,
+    alerts: weatherAlerts,
     atlanticStorms,
+    locationName: scoreLocationName,
   })
 
   return (
@@ -1851,14 +1782,14 @@ function App() {
         <div className="dashboard">
           <div className="dashboard__left">
             <div className="dashboard__top">
-            <section className="card score-summary" aria-label="Virginia Beach relevance score">
+            <section className="card score-summary" aria-label={`${scoreLocationName} relevance score`}>
               <div className="score-summary__row">
                 <div className="score-summary__intro">
                   <h1 className="brand">
                     <span className="brand__coast">Coast</span>
                     <span className="brand__cast">Cast</span>
                   </h1>
-                  <p className="score-summary__place">Virginia Beach coastal conditions</p>
+                  <p className="score-summary__place">{scorePlaceLine}</p>
                 </div>
                 <div className="score-summary__metric">
                   <div className="score-summary__value" aria-hidden="true">
@@ -1887,9 +1818,7 @@ function App() {
             <WindyMapCard
               latitude={coords.latitude}
               longitude={coords.longitude}
-              usingCurrentLocation={
-                locationSource === 'browser' && geoPhase === 'ready'
-              }
+              usingCurrentLocation={usingCurrentLocation}
               placeLabel={placeLabel}
             />
           </div>
@@ -1909,9 +1838,7 @@ function App() {
               items={quakes}
               errorMessage={quakeError}
               fetchedAt={quakeFetchedAt}
-              usingCurrentLocation={
-                locationSource === 'browser' && geoPhase === 'ready'
-              }
+              usingCurrentLocation={usingCurrentLocation}
               placeLabel={placeLabel}
             />
 
