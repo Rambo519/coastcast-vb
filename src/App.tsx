@@ -6,11 +6,11 @@ import {
   formatMiles,
   isAtlanticNhcStorm,
   loadStormProducts,
-  nhcFiniteNumber,
   relevancePlacePhrase,
   tropicalWatchWarningFromAlerts,
   type HurricaneEval,
   type HurricaneRelevance,
+  type HurricaneTrend,
   type NhcStorm,
   type NhcStormProducts,
 } from './nhcRelevance'
@@ -491,6 +491,16 @@ type ScoreResult = {
   score: number | null
   status: string
   blurb: string
+}
+
+/** Display-only threat band for the score numeral. Does not change the formula. */
+function scoreToneClass(score: number | null): string {
+  if (score == null) return 'score-summary__metric--pending'
+  if (score <= 19) return 'score-summary__metric--t0'
+  if (score <= 39) return 'score-summary__metric--t1'
+  if (score <= 59) return 'score-summary__metric--t2'
+  if (score <= 79) return 'score-summary__metric--t3'
+  return 'score-summary__metric--t4'
 }
 
 /**
@@ -1112,6 +1122,12 @@ function NwsAlertsCard(props: {
   )
 }
 
+function compactAtlanticTrend(trend: HurricaneTrend): string {
+  if (trend === 'Approaching') return 'approaching'
+  if (trend === 'Moving away') return 'moving away'
+  return 'uncertain'
+}
+
 function hurricaneBadge(label: string, phase: LivePhase): React.CSSProperties {
   if (phase === 'loading') {
     return {
@@ -1227,7 +1243,7 @@ function HurricanesCard(props: {
   }, [storms, location, productsById, nwsWw])
 
   const primary = evals[0] ?? null
-  const extras = evals.slice(1, 4)
+  const extras = evals.slice(1)
   const relevanceLabel: HurricaneRelevance | 'Issue' | '···' =
     phase === 'loading' ? '···' : phase === 'error' ? 'Issue' : (primary?.relevance ?? 'CLEAR')
   const place = relevancePlacePhrase(usingCurrentLocation, placeLabel)
@@ -1305,22 +1321,47 @@ function HurricanesCard(props: {
             Based on official NHC forecast data — CoastCast does not predict storm
             paths.
           </p>
-          {extras.map((row, i) => {
-            const kt = nhcFiniteNumber(row.storm.intensity)
-            return (
-              <p
-                key={row.storm.id ?? `${row.headline}-${i}`}
-                style={{ ...quakeLine, marginTop: '0.45rem' }}
-              >
-                Also: <strong>{row.headline}</strong>
-                {' · '}
-                {row.relevance}
-                {' · '}
-                closest forecast {formatMiles(row.closestForecastMiles)}
-                {kt != null ? ` · ${kt} kt` : ''}
-              </p>
-            )
-          })}
+          {extras.length > 0 ? (
+            <div className="hurricane-others">
+              <p className="hurricane-others__label">OTHER ATLANTIC SYSTEMS</p>
+              {extras.map((row, i) => {
+                const bits: string[] = [row.relevance]
+                if (row.closestForecastMiles != null) {
+                  bits.push(`${Math.round(row.closestForecastMiles)} mi`)
+                }
+                bits.push(compactAtlanticTrend(row.trend))
+                return (
+                  <div
+                    key={row.storm.id ?? `${row.headline}-${i}`}
+                    className="hurricane-others__item"
+                  >
+                    <p className="hurricane-others__name">
+                      <strong>{row.headline}</strong>
+                    </p>
+                    <p className="hurricane-others__meta">
+                      {bits.join(' · ')}
+                      {row.officialUrl ? (
+                        <>
+                          {' · '}
+                          <a
+                            href={row.officialUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            NHC forecast
+                            <span className="nhc-forecast-ext" aria-hidden="true">
+                              {' '}
+                              ↗
+                            </span>
+                          </a>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -2300,9 +2341,11 @@ function App() {
                   </h1>
                   <p className="score-summary__place">{scorePlaceLine}</p>
                 </div>
-                <div className="score-summary__metric">
+                <div className={`score-summary__metric ${scoreToneClass(score.score)}`}>
                   <div className="score-summary__value" aria-hidden="true">
-                    {score.score == null ? '…' : score.score}
+                    <span className="score-summary__num">
+                      {score.score == null ? '…' : score.score}
+                    </span>
                   </div>
                   <p className="score-summary__status">Status · {score.status}</p>
                 </div>

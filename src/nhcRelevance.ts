@@ -521,7 +521,10 @@ export function evaluateStorm(
 export function compareEvals(a: HurricaneEval, b: HurricaneEval): number {
   const rank = RANK[b.relevance] - RANK[a.relevance]
   if (rank !== 0) return rank
-  const aClose = Math.min(a.closestForecastMiles ?? Infinity, a.currentMiles ?? Infinity)
-  const bClose = Math.min(b.closestForecastMiles ?? Infinity, b.currentMiles ?? Infinity)
-  return aClose - bClose
+  const aF = a.closestForecastMiles
+  const bF = b.closestForecastMiles
+  if (aF != null && bF != null && aF !== bF) return aF - bF
+  if (aF != null && bF == null) return -1
+  if (aF == null && bF != null) return 1
+  return (a.currentMiles ?? Infinity) - (b.currentMiles ?? Infinity)
 }

@@ -64,23 +64,43 @@
 
 .score-summary__value {
   box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  place-content: center;
+  width: 100%;
+  min-width: 6.5rem;
+  height: 4rem;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--score-border, rgba(232, 228, 220, 0.38));
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(232, 228, 220, 0.16), rgba(15, 23, 42, 0.92));
+  box-shadow:
+    0 0 16px var(--score-glow, rgba(232, 228, 220, 0.08)),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  color: var(--score-tone, #f4f1ea);
   font-size: clamp(3.55rem, 7.4vw, 5.1rem);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  letter-spacing: -0.05em;
-  color: #f4f1ea;
-  padding: 0.22rem 1.05rem;
-  border-radius: var(--radius-md);
-  background: linear-gradient(180deg, rgba(232, 228, 220, 0.16), rgba(15, 23, 42, 0.92));
-  border: 1px solid rgba(232, 228, 220, 0.38);
-  box-shadow:
-    0 0 18px rgba(232, 228, 220, 0.08),
-    0 1px 0 rgba(255, 255, 255, 0.06) inset;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  letter-spacing: 0;
   overflow: hidden;
+}
+
+.score-summary__num {
+  display: block;
+  width: max-content;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: center;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  text-box-trim: trim-both;
+  text-box-edge: cap alphabetic;
 }
 
 .score-summary__blurb {
@@ -125,7 +145,46 @@
   justify-self: end;
   gap: 0.3rem;
   min-width: 7.25rem;
-  padding-left: 0.35rem;
+  padding: 0;
+  --score-tone: #f4f1ea;
+  --score-tone-soft: rgba(232, 228, 220, 0.92);
+  --score-glow: rgba(232, 228, 220, 0.08);
+  --score-border: rgba(232, 228, 220, 0.38);
+}
+
+.score-summary__metric--t0 {
+  --score-tone: #5ea872;
+  --score-tone-soft: rgba(94, 168, 114, 0.84);
+  --score-glow: rgba(94, 168, 114, 0.28);
+  --score-border: rgba(94, 168, 114, 0.5);
+}
+
+.score-summary__metric--t1 {
+  --score-tone: #a4b14d;
+  --score-tone-soft: rgba(164, 177, 77, 0.86);
+  --score-glow: rgba(164, 177, 77, 0.26);
+  --score-border: rgba(164, 177, 77, 0.5);
+}
+
+.score-summary__metric--t2 {
+  --score-tone: #d1b64a;
+  --score-tone-soft: rgba(209, 182, 74, 0.88);
+  --score-glow: rgba(209, 182, 74, 0.26);
+  --score-border: rgba(209, 182, 74, 0.5);
+}
+
+.score-summary__metric--t3 {
+  --score-tone: #d1843d;
+  --score-tone-soft: rgba(209, 132, 61, 0.88);
+  --score-glow: rgba(209, 132, 61, 0.28);
+  --score-border: rgba(209, 132, 61, 0.52);
+}
+
+.score-summary__metric--t4 {
+  --score-tone: #d15d58;
+  --score-tone-soft: rgba(209, 93, 88, 0.88);
+  --score-glow: rgba(209, 93, 88, 0.3);
+  --score-border: rgba(209, 93, 88, 0.54);
 }
 
 .score-summary__status {
@@ -133,7 +192,7 @@
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: rgba(232, 228, 220, 0.92);
+  color: var(--score-tone-soft, rgba(232, 228, 220, 0.92));
   text-align: center;
   line-height: 1.25;
   white-space: nowrap;
@@ -231,33 +290,35 @@
 .dashboard__left .score-summary__metric {
   justify-self: end;
   align-self: center;
+  align-items: center;
   min-width: 7.75rem;
+  padding: 0;
 }
 
 .dashboard__left .score-summary__value {
   box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  place-content: center;
   justify-self: stretch;
   align-self: center;
   font-size: clamp(2.55rem, 5.1vw, 3.55rem);
   line-height: 1;
-  letter-spacing: -0.045em;
+  letter-spacing: 0;
   min-width: 6.5rem;
   width: 100%;
   min-height: 4rem;
   height: 4rem;
-  padding: 0 0.4rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  padding: 0;
   overflow: hidden;
   border-radius: 12px;
-  border: 1px solid rgba(232, 228, 220, 0.36);
-  background: linear-gradient(165deg, rgba(232, 228, 220, 0.18) 0%, rgba(22, 32, 48, 0.96) 48%, rgba(10, 14, 22, 0.98) 100%);
+  border: 1px solid var(--score-border, rgba(232, 228, 220, 0.36));
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, rgba(22, 32, 48, 0.96) 46%, rgba(10, 14, 22, 0.98) 100%);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
-    0 1px 0 rgba(255, 255, 255, 0.1) inset,
-    0 12px 32px rgba(0, 0, 0, 0.38),
-    0 0 18px rgba(232, 228, 220, 0.08);
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 1px 0 color-mix(in srgb, var(--score-tone, #f4f1ea) 22%, transparent) inset,
+    0 10px 26px rgba(0, 0, 0, 0.36),
+    0 0 18px var(--score-glow, rgba(232, 228, 220, 0.08));
 }
 
 .dashboard__left .score-summary__blurb {
@@ -475,7 +536,7 @@
     width: 112px;
     min-width: 112px;
     max-width: 112px;
-    padding-left: 0;
+    padding: 0;
     justify-self: stretch;
     align-self: center;
     align-items: center;
@@ -484,18 +545,18 @@
 
   .dashboard__left .score-summary__value {
     box-sizing: border-box;
-    font-size: 2.05rem;
+    display: grid;
+    place-items: center;
+    place-content: center;
+    font-size: 2.15rem;
     line-height: 1;
-    letter-spacing: -0.04em;
+    letter-spacing: 0;
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    min-height: 3.35rem;
-    height: 3.35rem;
+    min-height: 3.45rem;
+    height: 3.45rem;
     padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     overflow: hidden;
     flex-shrink: 1;
   }
@@ -972,6 +1033,42 @@
 
 .hurricane-link {
   margin: 0.55rem 0 0;
+}
+
+.hurricane-others {
+  margin: 0.7rem 0 0;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.hurricane-others__label {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(200, 210, 225, 0.58);
+  line-height: 1.3;
+}
+
+.hurricane-others__item {
+  margin: 0.42rem 0 0;
+}
+
+.hurricane-others__item + .hurricane-others__item {
+  margin-top: 0.48rem;
+}
+
+.hurricane-others__name {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.hurricane-others__meta {
+  margin: 0.08rem 0 0;
+  font-size: 0.78125rem;
+  line-height: 1.4;
+  color: rgba(200, 210, 225, 0.7);
 }
 
 /* Last line in each panel: compact “UPDATED” footer */
