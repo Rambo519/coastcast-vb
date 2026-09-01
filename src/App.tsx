@@ -26,6 +26,130 @@ const NWS_FETCH_HEADERS = {
   'User-Agent': 'CoastCastVB/0.1 (Virginia Beach dashboard; educational use)',
 } as const
 
+function isUsableHttpUrl(url: string): boolean {
+  if (!url) return false
+  try {
+    const u = new URL(url)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function nwsPointsUrl(lat: number, lon: number): string {
+  const point =
+    lat === VB_LAT && lon === VB_LON
+      ? '36.8529,-75.9780'
+      : `${lat.toFixed(4)},${lon.toFixed(4)}`
+  return `https://api.weather.gov/points/${point}`
+}
+
+type NwsQuantity = {
+  value?: number | null
+}
+
+type NwsForecastPeriod = {
+  name?: string | null
+  startTime?: string | null
+  endTime?: string | null
+  isDaytime?: boolean
+  temperature?: number | null
+  probabilityOfPrecipitation?: NwsQuantity | null
+  relativeHumidity?: NwsQuantity | null
+  icon?: string | null
+  shortForecast?: string | null
+}
+
+type ForecastDay = {
+  dayLabel: string
+  condition: string
+  iconUrl: string | null
+  high: string
+  rain: string
+  humidity: string
+}
+
+function nwsQuantityValue(q: NwsQuantity | null | undefined): number | null {
+  const v = q?.value
+  return typeof v === 'number' && Number.isFinite(v) ? v : null
+}
+
+function formatForecastPct(value: number | null): string {
+  return value == null ? '—' : `${Math.round(value)}%`
+}
+
+function formatForecastDayLabel(
+  startTime: string | null | undefined,
+  fallbackName: string,
+): string {
+  if (startTime) {
+    const d = new Date(startTime)
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()
+    }
+  }
+  const token = fallbackName.trim().split(/\s+/)[0] ?? ''
+  return token.slice(0, 3).toUpperCase() || '—'
+}
+
+function humidityForDaytimePeriod(
+  day: NwsForecastPeriod,
+  hourly: NwsForecastPeriod[],
+): number | null {
+  const direct = nwsQuantityValue(day.relativeHumidity)
+  if (direct != null) return direct
+
+  const start = day.startTime ? Date.parse(day.startTime) : NaN
+  if (!Number.isFinite(start)) return null
+  const end = day.endTime ? Date.parse(day.endTime) : start + 12 * 60 * 60 * 1000
+
+  let bestHum: number | null = null
+  let bestTemp = -Infinity
+  for (const hour of hourly) {
+    const hs = hour.startTime ? Date.parse(hour.startTime) : NaN
+    if (!Number.isFinite(hs) || hs < start || hs >= end) continue
+    const hum = nwsQuantityValue(hour.relativeHumidity)
+    if (hum == null) continue
+    const temp =
+      typeof hour.temperature === 'number' && Number.isFinite(hour.temperature)
+        ? hour.temperature
+        : -Infinity
+    if (temp >= bestTemp) {
+      bestTemp = temp
+      bestHum = hum
+    }
+  }
+  return bestHum
+}
+
+function pickDaytimeForecasts(
+  periods: NwsForecastPeriod[],
+  hourly: NwsForecastPeriod[],
+): ForecastDay[] {
+  const days: ForecastDay[] = []
+  for (const period of periods) {
+    if (period.isDaytime !== true) continue
+    const high =
+      typeof period.temperature === 'number' && Number.isFinite(period.temperature)
+        ? `${Math.round(period.temperature)}°`
+        : '—'
+    const icon =
+      typeof period.icon === 'string' && isUsableHttpUrl(period.icon.trim())
+        ? period.icon.trim()
+        : null
+    days.push({
+      dayLabel: formatForecastDayLabel(period.startTime, period.name ?? ''),
+      condition: (period.shortForecast ?? '').trim() || '—',
+      iconUrl: icon,
+      high,
+      rain: formatForecastPct(nwsQuantityValue(period.probabilityOfPrecipitation)),
+      humidity: formatForecastPct(humidityForDaytimePeriod(period, hourly)),
+    })
+    if (days.length >= 3) break
+  }
+  return days
+}
+
 async function fetchNwsPointLabel(
   lat: number,
   lon: number,
@@ -56,161 +180,6 @@ const NHC_FETCH_HEADERS = {
   Accept: 'application/json',
   'User-Agent': 'CoastCastVB/0.1 (Virginia Beach dashboard; educational use)',
 } as const
-
-/** Max Oceanfront-specific lines (live or curated); quality over quantity */
-const OCEANFRONT_NATURE_ITEM_MAX = 3
-
-/** Narrow Wikipedia search; results are discarded unless they pass oceanfront-only filters */
-const WIKIPEDIA_OCEANFRONT_SEARCH =
-  '"Virginia Beach" boardwalk OR "Virginia Beach" oceanfront OR "Virginia Beach" "resort beach"'
-
-const WIKIPEDIA_HEADERS = {
-  /** https://foundation.wikimedia.org/wiki/Policy:User-Agent_policy */
-  'Api-User-Agent': 'CoastCastVB/0.1 (Virginia Beach dashboard; educational use)',
-} as const
-
-type NatureNewsItem = {
-  title: string
-  summary: string
-  url: string
-}
-
-function isUsableHttpUrl(url: string): boolean {
-  if (!url) return false
-  try {
-    const u = new URL(url)
-    return u.protocol === 'http:' || u.protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
-/** Stable article URL from MediaWiki search `pageid` (avoids broken title slugs). */
-function wikiUrlFromPageId(pageid: unknown): string {
-  const id = typeof pageid === 'number' ? pageid : Number(pageid)
-  if (!Number.isInteger(id) || id <= 0) return ''
-  return `https://en.wikipedia.org/?curid=${id}`
-}
-
-/**
- * In-app Oceanfront strip only (boardwalk / resort beach / dune line) — used when
- * live search yields nothing acceptable or the request fails.
- */
-const OCEANFRONT_CURATED_SNIPPETS: NatureNewsItem[] = [
-  {
-    title: 'Dunes beside the boardwalk strip',
-    summary:
-      'Keep off fenced dunes, stay on marked crossings, and treat roped habitat along the Oceanfront sand as closed — it stabilizes the beach and protects shoreline plants.',
-    url: 'https://www.virginiabeach.gov/government/departments/parks-recreation',
-  },
-  {
-    title: 'Surf zone & lifeguarded Oceanfront swimming',
-    summary:
-      'Check flags and staffed towers along the resort beach before you wade; rips run along the open Atlantic beach — this card is FYI only, not a rescue channel.',
-    url: 'https://www.virginiabeach.gov/visitors',
-  },
-  {
-    title: 'Beachfront wildlife & lighting (Oceanfront context)',
-    summary:
-      'Dim unnecessary beachfront lighting during nesting season and give marked turtle or shorebird zones space — follow posted Oceanfront rules if closures are active.',
-    url: 'https://www.virginiabeach.gov/',
-  },
-]
-
-function stripWikiSnippetHtml(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-/** Reject regional / other-beach content; user-requested exclusions are listed here. */
-function wikiHitFailsOceanfrontScope(title: string, snippetPlain: string): boolean {
-  const blob = `${title} ${snippetPlain}`.toLowerCase()
-  const blocked = [
-    'assateague',
-    'carova',
-    'back bay',
-    'sandbridge',
-    'norfolk',
-    'portsmouth',
-    'chesapeake',
-    'hampton roads',
-    'city of hampton',
-    'hampton, virginia',
-    ', hampton',
-    'outer banks',
-    'currituck',
-    'nags head',
-    'kill devil',
-    'kitty hawk',
-    'chincoteague',
-    'first landing',
-    'linkhorn',
-    'lynnhaven',
-    'lynnhaven river',
-    'great neck',
-    'williamsburg',
-    'james river',
-    'eastern shore of virginia',
-    'accomack',
-    'shore drive',
-    "chick's beach",
-    'chicks beach',
-    'croatan',
-    'oceana naval',
-    'naval air station oceana',
-    'delaware',
-    'maryland',
-    'wrightsville',
-    'carolina beach',
-    'myrtle beach',
-  ]
-  return blocked.some((w) => blob.includes(w))
-}
-
-/**
- * Require clear Oceanfront / boardwalk / resort-beach shoreline signals (not general
- * "Virginia Beach" city topics unless they tie to the strip).
- */
-function wikiHitHasOceanfrontSignals(title: string, snippetPlain: string): boolean {
-  const blob = `${title} ${snippetPlain}`.toLowerCase()
-  const signals = [
-    'oceanfront',
-    'boardwalk',
-    'beachfront',
-    'resort beach',
-    'resort area',
-    'atlantic avenue',
-    'atlantic ave',
-    'neptune',
-    'virginia beach fishing pier',
-    'fishing pier',
-    'beach patrol',
-    'lifeguard',
-    'surf zone',
-    'surf rescue',
-    'dune',
-    'dunes',
-    'nesting',
-    'sea turtle',
-    'shorebird',
-    'beach nourishment',
-  ]
-  return signals.some((s) => blob.includes(s))
-}
-
-function wikiHitIsOceanfrontOnly(title: string, snippetPlain: string): boolean {
-  if (!title.trim()) return false
-  if (wikiHitFailsOceanfrontScope(title, snippetPlain)) return false
-  if (!wikiHitHasOceanfrontSignals(title, snippetPlain)) return false
-  const blob = `${title} ${snippetPlain}`.toLowerCase()
-  const vb =
-    blob.includes('virginia beach') ||
-    blob.includes(' va beach') ||
-    /^virginia beach\b/i.test(title.trim())
-  return vb
-}
 
 type LivePhase = 'loading' | 'error' | 'ready'
 
@@ -994,25 +963,13 @@ function HurricanesCard(props: {
   )
 }
 
-function NatureNewsTitle(props: { item: NatureNewsItem }) {
-  const { item } = props
-  if (!isUsableHttpUrl(item.url)) return <>{item.title}</>
-  return (
-    <a href={item.url} target="_blank" rel="noopener noreferrer">
-      {item.title}
-    </a>
-  )
-}
-
-function NatureNewsCard(props: {
+function ForecastCard(props: {
   phase: LivePhase
-  items: NatureNewsItem[]
+  days: ForecastDay[]
   errorMessage: string
   fetchedAt: Date | null
-  fromWikipedia: boolean
 }) {
-  const { phase, items, errorMessage, fetchedAt, fromWikipedia } = props
-  const shown = items.slice(0, 2)
+  const { phase, days, errorMessage, fetchedAt } = props
 
   let badge: { label: string; style: React.CSSProperties }
   if (phase === 'loading') {
@@ -1035,7 +992,17 @@ function NatureNewsCard(props: {
         color: 'rgba(255, 190, 190, 0.95)',
       },
     }
-  } else if (fromWikipedia) {
+  } else if (days.length === 0) {
+    badge = {
+      label: 'None',
+      style: {
+        ...badgeBase,
+        background: 'rgba(200, 200, 210, 0.08)',
+        borderColor: 'rgba(255, 255, 255, 0.12)',
+        color: 'rgba(200, 210, 225, 0.75)',
+      },
+    }
+  } else {
     badge = {
       label: 'Live',
       style: {
@@ -1043,16 +1010,6 @@ function NatureNewsCard(props: {
         background: 'rgba(120, 200, 160, 0.12)',
         borderColor: 'rgba(120, 200, 160, 0.35)',
         color: 'rgba(180, 235, 205, 0.95)',
-      },
-    }
-  } else {
-    badge = {
-      label: 'FYI',
-      style: {
-        ...badgeBase,
-        background: 'rgba(160, 175, 255, 0.1)',
-        borderColor: 'rgba(160, 175, 255, 0.28)',
-        color: 'rgba(195, 205, 255, 0.95)',
       },
     }
   }
@@ -1065,67 +1022,59 @@ function NatureNewsCard(props: {
         })
       : null
 
-  const footerSource =
-    phase === 'loading'
-      ? 'loading…'
-      : phase === 'error'
-        ? 'Wikipedia failed · Oceanfront curated backup'
-        : fromWikipedia
-          ? 'Wikipedia (Oceanfront-filtered)'
-          : 'Oceanfront curated in-app'
-
   return (
     <section className="card panel panel--nature">
       <div style={panelHead}>
-        <h2 className="card__title">Nature / news</h2>
+        <h2 className="card__title">3-Day Forecast</h2>
         <span style={badge.style}>{badge.label}</span>
       </div>
 
       {phase === 'loading' && (
-        <p className="panel__body">Loading Oceanfront news…</p>
+        <p className="panel__body">Loading 3-day forecast…</p>
       )}
 
       {phase === 'error' && (
-        <>
-          <p className="panel__body">
-            Could not reach Wikipedia ({errorMessage}). Informational only — not a
-            hazard feed.
-          </p>
-          {shown.length > 0 && (
-            <div className="panel__body">
-              {shown.map((it, i) => (
-                <p key={`${it.url}-${i}`} style={{ ...quakeLine, marginTop: i === 0 ? '0.35rem' : '0.3rem' }}>
-                  <NatureNewsTitle item={it} />
-                  {' — '}
-                  {it.summary}
-                </p>
-              ))}
+        <p className="panel__body">
+          Could not load the NWS forecast
+          {errorMessage ? ` (${errorMessage})` : ''}.
+        </p>
+      )}
+
+      {phase === 'ready' && days.length === 0 && (
+        <p className="panel__body">No daytime forecast periods available right now.</p>
+      )}
+
+      {phase === 'ready' && days.length > 0 && (
+        <div className="panel__body forecast">
+          {days.map((day, i) => (
+            <div key={`${day.dayLabel}-${i}`} className="forecast__day">
+              <p className="forecast__dow">{day.dayLabel}</p>
+              <p className="forecast__cond">
+                {day.iconUrl ? (
+                  <img
+                    className="forecast__icon"
+                    src={day.iconUrl}
+                    alt=""
+                    width={42}
+                    height={42}
+                  />
+                ) : null}
+                <span>{day.condition}</span>
+              </p>
+              <p className="forecast__temp">{day.high}</p>
+              <p className="forecast__meta">
+                Rain {day.rain} · Humidity {day.humidity}
+              </p>
             </div>
-          )}
-        </>
-      )}
-
-      {phase === 'ready' && shown.length === 0 && (
-        <p className="panel__body">No Oceanfront news items right now.</p>
-      )}
-
-      {phase === 'ready' && shown.length > 0 && (
-        <div className="panel__body">
-          <p style={{ margin: 0 }}>Informational news only — not a hazard feed.</p>
-          {shown.map((it, i) => (
-            <p key={`${it.url}-${i}`} style={{ ...quakeLine, marginTop: i === 0 ? '0.35rem' : '0.3rem' }}>
-              <NatureNewsTitle item={it} />
-              {' — '}
-              {it.summary}
-            </p>
           ))}
         </div>
       )}
 
       <p style={metaMuted}>
         {phase === 'loading' && 'Last updated · loading…'}
-        {phase !== 'loading' && footerTime != null && `Last updated · ${footerSource} · ${footerTime}`}
-        {phase !== 'loading' && footerTime == null && 'Last updated · —'}
+        {phase === 'error' && 'Last updated · —'}
+        {phase === 'ready' && footerTime != null && `Last updated · NWS · ${footerTime}`}
+        {phase === 'ready' && footerTime == null && 'Last updated · —'}
       </p>
     </section>
   )
@@ -1262,11 +1211,10 @@ function App() {
   const [quakeFetchedAt, setQuakeFetchedAt] = useState<Date | null>(null)
   const [nhcFetchedAt, setNhcFetchedAt] = useState<Date | null>(null)
 
-  const [naturePhase, setNaturePhase] = useState<LivePhase>('loading')
-  const [natureItems, setNatureItems] = useState<NatureNewsItem[]>([])
-  const [natureError, setNatureError] = useState('')
-  const [natureFromWiki, setNatureFromWiki] = useState(false)
-  const [natureFetchedAt, setNatureFetchedAt] = useState<Date | null>(null)
+  const [forecastPhase, setForecastPhase] = useState<LivePhase>('loading')
+  const [forecastDays, setForecastDays] = useState<ForecastDay[]>([])
+  const [forecastError, setForecastError] = useState('')
+  const [forecastFetchedAt, setForecastFetchedAt] = useState<Date | null>(null)
 
   const [preferMyLocation, setPreferMyLocation] = useState(readUseMyLocationPref)
   const [coords, setCoords] = useState<GeoCoords>(VB_COORDS)
@@ -1461,87 +1409,90 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const ctrl = new AbortController()
-    const curatedTop = () =>
-      OCEANFRONT_CURATED_SNIPPETS.filter((it) => isUsableHttpUrl(it.url)).slice(
-        0,
-        OCEANFRONT_NATURE_ITEM_MAX,
-      )
+    if (preferMyLocation && geoPhase === 'locating') {
+      setForecastPhase('loading')
+      return
+    }
 
+    const point =
+      locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
+    const ctrl = new AbortController()
+    setForecastPhase('loading')
     ;(async () => {
       try {
-        const url = new URL('https://en.wikipedia.org/w/api.php')
-        url.searchParams.set('action', 'query')
-        url.searchParams.set('list', 'search')
-        url.searchParams.set('srsearch', WIKIPEDIA_OCEANFRONT_SEARCH)
-        url.searchParams.set('srlimit', '16')
-        url.searchParams.set('format', 'json')
-        url.searchParams.set('origin', '*')
-
-        const res = await fetch(url.toString(), {
+        const pointsRes = await fetch(nwsPointsUrl(point.latitude, point.longitude), {
           signal: ctrl.signal,
-          headers: WIKIPEDIA_HEADERS,
+          headers: NWS_FETCH_HEADERS,
         })
-        if (!res.ok) throw new Error(`Wikipedia responded with ${res.status}`)
+        if (!pointsRes.ok) throw new Error(`NWS points responded with ${pointsRes.status}`)
+        const pointsData: unknown = await pointsRes.json()
+        const props =
+          pointsData && typeof pointsData === 'object'
+            ? (pointsData as {
+                properties?: { forecast?: unknown; forecastHourly?: unknown }
+              }).properties
+            : undefined
+        const forecastUrl =
+          typeof props?.forecast === 'string' ? props.forecast : ''
+        if (!forecastUrl || !isUsableHttpUrl(forecastUrl)) {
+          throw new Error('NWS did not return a forecast URL')
+        }
+        const hourlyUrl =
+          typeof props?.forecastHourly === 'string' && isUsableHttpUrl(props.forecastHourly)
+            ? props.forecastHourly
+            : ''
 
-        const data = (await res.json()) as {
-          error?: { info?: string }
-          query?: { search?: { title: string; snippet: string; pageid?: number }[] }
+        const [forecastRes, hourlyRes] = await Promise.all([
+          fetch(forecastUrl, { signal: ctrl.signal, headers: NWS_FETCH_HEADERS }),
+          hourlyUrl
+            ? fetch(hourlyUrl, { signal: ctrl.signal, headers: NWS_FETCH_HEADERS })
+            : Promise.resolve(null),
+        ])
+        if (!forecastRes.ok) {
+          throw new Error(`NWS forecast responded with ${forecastRes.status}`)
         }
-        if (data.error) {
-          throw new Error(data.error.info ?? 'Wikipedia search error')
-        }
-        const hits = data.query?.search
-        if (!Array.isArray(hits) || hits.length === 0) {
-          setNatureItems(curatedTop())
-          setNatureFromWiki(false)
-          setNatureError('')
-          setNaturePhase('ready')
-          setNatureFetchedAt(new Date())
-          return
+        const forecastData: unknown = await forecastRes.json()
+        const periodsRaw =
+          forecastData && typeof forecastData === 'object'
+            ? (forecastData as { properties?: { periods?: unknown } }).properties
+                ?.periods
+            : undefined
+        const periods = Array.isArray(periodsRaw)
+          ? (periodsRaw as NwsForecastPeriod[])
+          : []
+
+        let hourly: NwsForecastPeriod[] = []
+        if (hourlyRes && hourlyRes.ok) {
+          const hourlyData: unknown = await hourlyRes.json()
+          const hourlyRaw =
+            hourlyData && typeof hourlyData === 'object'
+              ? (hourlyData as { properties?: { periods?: unknown } }).properties
+                  ?.periods
+              : undefined
+          if (Array.isArray(hourlyRaw)) hourly = hourlyRaw as NwsForecastPeriod[]
         }
 
-        const mapped: NatureNewsItem[] = []
-        for (const h of hits) {
-          if (!h.title || mapped.length >= OCEANFRONT_NATURE_ITEM_MAX) continue
-          const stripped = stripWikiSnippetHtml(h.snippet)
-          if (!wikiHitIsOceanfrontOnly(h.title, stripped)) continue
-          const articleUrl = wikiUrlFromPageId(h.pageid)
-          if (!isUsableHttpUrl(articleUrl)) continue
-          mapped.push({
-            title: h.title,
-            summary:
-              stripped.length > 0
-                ? stripped.slice(0, 200)
-                : 'Open the Wikipedia article for Oceanfront context.',
-            url: articleUrl,
-          })
-        }
-
-        if (mapped.length === 0) {
-          setNatureItems(curatedTop())
-          setNatureFromWiki(false)
-        } else {
-          setNatureItems(mapped)
-          setNatureFromWiki(true)
-        }
-        setNatureError('')
-        setNaturePhase('ready')
-        setNatureFetchedAt(new Date())
+        setForecastDays(pickDaytimeForecasts(periods, hourly))
+        setForecastError('')
+        setForecastFetchedAt(new Date())
+        setForecastPhase('ready')
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') return
-        setNatureError(e instanceof Error ? e.message : 'Could not load nature/news')
-        setNatureItems(
-          OCEANFRONT_CURATED_SNIPPETS.filter((it) => isUsableHttpUrl(it.url)).slice(0, 2),
+        setForecastError(
+          e instanceof Error ? e.message : 'Could not load forecast',
         )
-        setNatureFromWiki(false)
-        setNaturePhase('error')
-        setNatureFetchedAt(new Date())
+        setForecastDays([])
+        setForecastPhase('error')
       }
     })()
-
     return () => ctrl.abort()
-  }, [])
+  }, [
+    preferMyLocation,
+    geoPhase,
+    locationSource,
+    coords.latitude,
+    coords.longitude,
+  ])
 
   const score = computeVbScore({
     quakePhase,
@@ -1618,12 +1569,11 @@ function App() {
               fetchedAt={quakeFetchedAt}
             />
 
-            <NatureNewsCard
-              phase={naturePhase}
-              items={natureItems}
-              errorMessage={natureError}
-              fetchedAt={natureFetchedAt}
-              fromWikipedia={natureFromWiki}
+            <ForecastCard
+              phase={forecastPhase}
+              days={forecastDays}
+              errorMessage={forecastError}
+              fetchedAt={forecastFetchedAt}
             />
           </aside>
         </div>
