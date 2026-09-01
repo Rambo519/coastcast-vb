@@ -9,8 +9,11 @@ const CHOSE_VB_PREF_KEY = 'coastcast-chose-virginia-beach'
 const LOCATION_ONBOARDED_PREF_KEY = 'coastcast-location-onboarded'
 const MOBILE_LOC_MQ = '(max-width: 600px)'
 
-const USGS_QUAKES_URL =
-  'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=36.8529&longitude=-75.9780&maxradiuskm=805&minmagnitude=2.5&orderby=time&limit=20'
+function usgsQuakesUrl(lat: number, lon: number): string {
+  const latitude = lat === VB_LAT && lon === VB_LON ? '36.8529' : lat.toFixed(4)
+  const longitude = lat === VB_LAT && lon === VB_LON ? '-75.9780' : lon.toFixed(4)
+  return `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${latitude}&longitude=${longitude}&maxradiuskm=805&minmagnitude=2.5&orderby=time&limit=20`
+}
 
 /** Virginia Beach oceanfront — NWS active alerts for this point */
 const NWS_ALERTS_URL =
@@ -704,14 +707,23 @@ function WindyMapCard(props: {
   )
 }
 
+function quakeRadiusPhrase(usingCurrentLocation: boolean, placeLabel: string | null): string {
+  if (!usingCurrentLocation) return 'within 500 miles of Virginia Beach'
+  if (placeLabel) return `within 500 miles of ${placeLabel}`
+  return 'within 500 miles of your location'
+}
+
 function QuakesCard(props: {
   phase: LivePhase
   items: UsgsFeature[]
   errorMessage: string
   fetchedAt: Date | null
+  usingCurrentLocation: boolean
+  placeLabel: string | null
 }) {
-  const { phase, items, errorMessage, fetchedAt } = props
+  const { phase, items, errorMessage, fetchedAt, usingCurrentLocation, placeLabel } = props
   const shown = items.slice(0, 3)
+  const radiusPhrase = quakeRadiusPhrase(usingCurrentLocation, placeLabel)
 
   let badge: { label: string; style: React.CSSProperties }
   if (phase === 'loading') {
@@ -783,7 +795,7 @@ function QuakesCard(props: {
 
       {phase === 'ready' && shown.length === 0 && (
         <p className="panel__body">
-          No recent earthquakes showed up within 500 miles of Virginia Beach — the
+          No recent earthquakes showed up {radiusPhrase} — the
           coast is seismically quiet for now.
         </p>
       )}
@@ -791,7 +803,7 @@ function QuakesCard(props: {
       {phase === 'ready' && shown.length > 0 && (
         <div className="panel__body">
           <p style={{ margin: 0 }}>
-            Latest from USGS (within 500 miles of Virginia Beach, M2.5+):
+            Latest from USGS ({radiusPhrase}, M2.5+):
           </p>
           {shown.map((f, i) => {
             const m = f.properties.mag!
@@ -1602,10 +1614,19 @@ function App() {
   }, [applyBrowserPosition, failBrowserPosition])
 
   useEffect(() => {
+    if (preferMyLocation && geoPhase === 'locating') {
+      setQuakePhase('loading')
+      return
+    }
+
+    const point =
+      locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
+    const url = usgsQuakesUrl(point.latitude, point.longitude)
     const ctrl = new AbortController()
+    setQuakePhase('loading')
     ;(async () => {
       try {
-        const res = await fetch(USGS_QUAKES_URL, { signal: ctrl.signal })
+        const res = await fetch(url, { signal: ctrl.signal })
         if (!res.ok) throw new Error(`USGS responded with ${res.status}`)
         const data: { features?: UsgsFeature[] } = await res.json()
         const raw = Array.isArray(data.features) ? data.features : []
@@ -1626,7 +1647,13 @@ function App() {
       }
     })()
     return () => ctrl.abort()
-  }, [])
+  }, [
+    preferMyLocation,
+    geoPhase,
+    locationSource,
+    coords.latitude,
+    coords.longitude,
+  ])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -1882,6 +1909,10 @@ function App() {
               items={quakes}
               errorMessage={quakeError}
               fetchedAt={quakeFetchedAt}
+              usingCurrentLocation={
+                locationSource === 'browser' && geoPhase === 'ready'
+              }
+              placeLabel={placeLabel}
             />
 
             <ForecastCard
