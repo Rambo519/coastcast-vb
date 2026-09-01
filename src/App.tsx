@@ -60,10 +60,22 @@ type NwsForecastPeriod = {
   shortForecast?: string | null
 }
 
+type ForecastIconKind =
+  | 'sun'
+  | 'mostly-sun'
+  | 'partly-cloud'
+  | 'cloud'
+  | 'showers'
+  | 'rain'
+  | 'storm'
+  | 'snow'
+  | 'fog'
+  | 'wind'
+
 type ForecastDay = {
   dayLabel: string
   condition: string
-  iconUrl: string | null
+  icon: ForecastIconKind
   high: string
   rain: string
   humidity: string
@@ -74,8 +86,47 @@ function nwsQuantityValue(q: NwsQuantity | null | undefined): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null
 }
 
-function formatForecastPct(value: number | null): string {
-  return value == null ? '—' : `${Math.round(value)}%`
+function compactForecastLabel(raw: string): string {
+  const t = raw.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!t) return '—'
+
+  if (/(scattered|isolated).*(thunder|t-storm|storm)/.test(t)) return 'Scattered Storms'
+  if (/thunder|t-storm|tstm/.test(t)) return 'Storms'
+  if (/blizzard|heavy snow|snow|flurries|wintry/.test(t)) return 'Snow'
+  if (/sleet|freezing rain|\bice\b/.test(t)) return 'Icy Mix'
+  if (/\bfog\b|\bmist\b|\bhaze\b/.test(t)) return 'Fog'
+  if (/shower/.test(t)) return 'Showers'
+  if (/\brain\b|drizzle/.test(t)) return 'Rain'
+  if (/mostly sunny|mostly clear/.test(t)) return 'Mostly Sunny'
+  if (/partly cloudy|partly sunny/.test(t)) return 'Partly Cloudy'
+  if (/mostly cloudy|considerable cloud/.test(t)) return 'Mostly Cloudy'
+  if (/overcast|\bcloudy\b/.test(t)) return 'Cloudy'
+  if (/sunny/.test(t)) return 'Sunny'
+  if (/\bclear\b|\bfair\b/.test(t)) return 'Clear'
+  if (/wind/.test(t)) return 'Windy'
+
+  const cleaned = raw.trim().replace(/\s+/g, ' ')
+  if (cleaned.length <= 22) return cleaned
+  return `${cleaned.slice(0, 20).replace(/[,;:\s]+$/, '')}…`
+}
+
+function forecastIconKind(label: string, iconUrl: string | null): ForecastIconKind {
+  const t = label.toLowerCase()
+  const path = (iconUrl ?? '').toLowerCase()
+  if (t.includes('storm') || path.includes('tsra') || path.includes('tornado')) return 'storm'
+  if (t.includes('snow') || t.includes('icy') || /\/(?:sn|rsn|ip)/.test(path)) return 'snow'
+  if (t.includes('fog') || /\/(?:fg|hz)/.test(path)) return 'fog'
+  if (t.includes('shower') || path.includes('shra')) return 'showers'
+  if (t.includes('rain') || /\/ra/.test(path)) return 'rain'
+  if (t.includes('wind') || path.includes('wind')) return 'wind'
+  if (t.includes('partly') || path.includes('/sct')) return 'partly-cloud'
+  if (t.includes('mostly cloudy') || t === 'cloudy' || /\/(?:bkn|ovc)/.test(path)) {
+    return 'cloud'
+  }
+  if (t.includes('mostly sunny') || path.includes('/few')) return 'mostly-sun'
+  if (t === 'sunny' || t === 'clear' || path.includes('/skc')) return 'sun'
+  if (t.includes('cloud')) return 'cloud'
+  return 'partly-cloud'
 }
 
 function formatForecastDayLabel(
@@ -90,6 +141,10 @@ function formatForecastDayLabel(
   }
   const token = fallbackName.trim().split(/\s+/)[0] ?? ''
   return token.slice(0, 3).toUpperCase() || '—'
+}
+
+function formatForecastPct(value: number | null): string {
+  return value == null ? '—' : `${Math.round(value)}%`
 }
 
 function humidityForDaytimePeriod(
@@ -133,14 +188,15 @@ function pickDaytimeForecasts(
       typeof period.temperature === 'number' && Number.isFinite(period.temperature)
         ? `${Math.round(period.temperature)}°`
         : '—'
-    const icon =
+    const iconUrl =
       typeof period.icon === 'string' && isUsableHttpUrl(period.icon.trim())
         ? period.icon.trim()
         : null
+    const condition = compactForecastLabel(period.shortForecast ?? '')
     days.push({
       dayLabel: formatForecastDayLabel(period.startTime, period.name ?? ''),
-      condition: (period.shortForecast ?? '').trim() || '—',
-      iconUrl: icon,
+      condition,
+      icon: forecastIconKind(condition, iconUrl),
       high,
       rain: formatForecastPct(nwsQuantityValue(period.probabilityOfPrecipitation)),
       humidity: formatForecastPct(humidityForDaytimePeriod(period, hourly)),
@@ -963,6 +1019,94 @@ function HurricanesCard(props: {
   )
 }
 
+function ForecastGlyph(props: { kind: ForecastIconKind }) {
+  const { kind } = props
+  return (
+    <svg className="forecast__icon" viewBox="0 0 24 24" aria-hidden="true">
+      {kind === 'sun' && (
+        <>
+          <circle cx="12" cy="12" r="5" fill="#fbbf24" />
+          <g stroke="#f59e0b" strokeWidth="1.7" strokeLinecap="round" fill="none">
+            <path d="M12 2.6v2.1M12 19.3v2.1M2.6 12h2.1M19.3 12h2.1M5.2 5.2l1.5 1.5M17.3 17.3l1.5 1.5M5.2 18.8l1.5-1.5M17.3 6.7l1.5-1.5" />
+          </g>
+        </>
+      )}
+      {kind === 'mostly-sun' && (
+        <>
+          <circle cx="9.2" cy="9.2" r="4.1" fill="#fbbf24" />
+          <g stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round" fill="none">
+            <path d="M9.2 2.4v1.7M2.4 9.2h1.7M4.2 4.2l1.2 1.2M14.2 4.2l-1.2 1.2" />
+          </g>
+          <path
+            fill="#e2e8f0"
+            d="M8.2 18.6h9.4a3.4 3.4 0 0 0 .3-6.8 4.4 4.4 0 0 0-8.4-1.3 3.5 3.5 0 0 0-1.3 8.1z"
+          />
+        </>
+      )}
+      {kind === 'partly-cloud' && (
+        <>
+          <circle cx="8.4" cy="8.6" r="4" fill="#fbbf24" />
+          <path
+            fill="#cbd5e1"
+            d="M7.6 19h10.2a3.6 3.6 0 0 0 .2-7.2 4.6 4.6 0 0 0-8.8-1.2A3.6 3.6 0 0 0 7.6 19z"
+          />
+        </>
+      )}
+      {kind === 'cloud' && (
+        <path
+          fill="#94a3b8"
+          d="M6.2 18.6h11.3a3.7 3.7 0 0 0 .3-7.4 5 5 0 0 0-9.6-1.5 3.9 3.9 0 0 0-2 8.9z"
+        />
+      )}
+      {(kind === 'showers' || kind === 'rain') && (
+        <>
+          <path
+            fill="#94a3b8"
+            d="M6.4 13.8h11a3.5 3.5 0 0 0 .3-7 4.7 4.7 0 0 0-9.1-1.4 3.7 3.7 0 0 0-2.2 8.4z"
+          />
+          <g stroke="#38bdf8" strokeWidth="1.7" strokeLinecap="round">
+            <path d="M8.2 16.4v2.6M12 17.1v2.8M15.8 16.4v2.6" />
+          </g>
+        </>
+      )}
+      {kind === 'storm' && (
+        <>
+          <path
+            fill="#64748b"
+            d="M6.2 13.4h11.2a3.5 3.5 0 0 0 .2-7 4.8 4.8 0 0 0-9.3-1.3A3.7 3.7 0 0 0 6.2 13.4z"
+          />
+          <path fill="#fbbf24" d="M12.7 12.6 9.4 18.2h2.3l-1 4.2 4.4-6.4h-2.5z" />
+        </>
+      )}
+      {kind === 'snow' && (
+        <>
+          <path
+            fill="#94a3b8"
+            d="M6.4 13.6h11a3.5 3.5 0 0 0 .3-7 4.7 4.7 0 0 0-9.1-1.4 3.7 3.7 0 0 0-2.2 8.4z"
+          />
+          <g fill="#e2e8f0">
+            <circle cx="8.4" cy="17.4" r="1" />
+            <circle cx="12" cy="18.6" r="1" />
+            <circle cx="15.6" cy="17.4" r="1" />
+          </g>
+        </>
+      )}
+      {kind === 'fog' && (
+        <g stroke="#94a3b8" strokeWidth="1.8" strokeLinecap="round">
+          <path d="M4.4 8.2h15.2M5.2 12h13.6M4.8 15.8h14.4M6.2 19.2h11.6" />
+        </g>
+      )}
+      {kind === 'wind' && (
+        <g stroke="#7dd3fc" strokeWidth="1.8" strokeLinecap="round" fill="none">
+          <path d="M3.6 9.2h11.4a2.4 2.4 0 1 0-2.4-2.4" />
+          <path d="M3.6 13.2h14.2a2.5 2.5 0 1 1-2.5 2.5" />
+          <path d="M3.6 17.4h8.8" />
+        </g>
+      )}
+    </svg>
+  )
+}
+
 function ForecastCard(props: {
   phase: LivePhase
   days: ForecastDay[]
@@ -1049,22 +1193,18 @@ function ForecastCard(props: {
           {days.map((day, i) => (
             <div key={`${day.dayLabel}-${i}`} className="forecast__day">
               <p className="forecast__dow">{day.dayLabel}</p>
-              <p className="forecast__cond">
-                {day.iconUrl ? (
-                  <img
-                    className="forecast__icon"
-                    src={day.iconUrl}
-                    alt=""
-                    width={42}
-                    height={42}
-                  />
-                ) : null}
-                <span>{day.condition}</span>
-              </p>
-              <p className="forecast__temp">{day.high}</p>
-              <p className="forecast__meta">
-                Rain {day.rain} · Humidity {day.humidity}
-              </p>
+              <div className="forecast__main">
+                <div className="forecast__copy">
+                  <p className="forecast__cond">
+                    <ForecastGlyph kind={day.icon} />
+                    <span>{day.condition}</span>
+                  </p>
+                  <p className="forecast__meta">
+                    Rain {day.rain} · Humidity {day.humidity}
+                  </p>
+                </div>
+                <p className="forecast__temp">{day.high}</p>
+              </div>
             </div>
           ))}
         </div>

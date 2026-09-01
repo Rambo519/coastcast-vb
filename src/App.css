@@ -919,10 +919,22 @@
   line-height: 1.2;
 }
 
+.forecast__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.forecast__copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .forecast__cond {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.42rem;
   margin: 0;
   font-size: 0.875rem;
   font-weight: 600;
@@ -931,36 +943,36 @@
 }
 
 .forecast__cond span {
-  display: -webkit-box;
+  min-width: 0;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .forecast__icon {
-  width: 42px;
-  height: 42px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
-  object-fit: contain;
-  image-rendering: auto;
+  display: block;
 }
 
 .forecast__temp {
-  margin: 0.06rem 0 0;
-  font-size: 1.55rem;
+  margin: 0;
+  flex: 0 0 auto;
+  font-size: 1.72rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
-  line-height: 1.05;
+  line-height: 1;
   color: var(--text-strong);
 }
 
 .forecast__meta {
-  margin: 0;
-  font-size: 0.75rem;
-  font-weight: 500;
+  margin: 0.12rem 0 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
   letter-spacing: 0.01em;
-  color: var(--text-muted);
+  color: rgba(210, 214, 220, 0.88);
   line-height: 1.35;
 }
 
@@ -972,16 +984,16 @@
   }
 
   .forecast__icon {
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
   }
 
   .forecast__temp {
-    font-size: 1.28rem;
+    font-size: 1.48rem;
   }
 
   .forecast__meta {
-    font-size: 0.71875rem;
+    font-size: 0.78rem;
   }
 }
 
