@@ -612,6 +612,178 @@ function formatUpdatedFooter(source: string, fetchedAt: Date | null): string {
   return `UPDATED · ${source} · ${datePart} · ${timePart}`
 }
 
+const USNO_ONEDAY_URL = '/api/usno-oneday'
+
+type SkywatchSunMoon = {
+  sunrise: string | null
+  sunset: string | null
+  moonPhase: string | null
+  illumination: string | null
+}
+
+type NasaSkyEvent = {
+  date: string
+  title: string
+  note: string
+  url: string
+}
+
+/** Curated 2026 events from official NASA Science skywatching pages. */
+const NASA_SKY_EVENTS: NasaSkyEvent[] = [
+  {
+    date: '2026-09-14',
+    title: 'Moon near Antares and the Teapot',
+    note: 'Look south about an hour after sunset.',
+    url: 'https://science.nasa.gov/skywatching/whats-up/whats-up-september-2026-skywatching-tips-from-nasa/',
+  },
+  {
+    date: '2026-09-18',
+    title: 'Venus at peak brilliance',
+    note: 'Look west shortly after sunset.',
+    url: 'https://science.nasa.gov/skywatching/whats-up/whats-up-september-2026-skywatching-tips-from-nasa/',
+  },
+  {
+    date: '2026-09-22',
+    title: 'September equinox',
+    note: 'Fall begins in the Northern Hemisphere.',
+    url: 'https://science.nasa.gov/skywatching/whats-up/whats-up-september-2026-skywatching-tips-from-nasa/',
+  },
+  {
+    date: '2026-09-26',
+    title: 'Harvest Moon near Saturn and Neptune',
+    note: 'Rises in the east shortly after sunset.',
+    url: 'https://science.nasa.gov/skywatching/whats-up/whats-up-september-2026-skywatching-tips-from-nasa/',
+  },
+  {
+    date: '2026-10-21',
+    title: 'Orionid meteor shower peak',
+    note: 'Best after midnight under dark skies.',
+    url: 'https://science.nasa.gov/solar-system/meteors-meteorites/orionids/',
+  },
+]
+
+function nextNasaSkyEvent(localYmd: string): NasaSkyEvent | null {
+  const upcoming = NASA_SKY_EVENTS.filter((e) => e.date >= localYmd)
+  return upcoming[0] ?? null
+}
+
+function localYmdInTimeZone(timeZone: string, now = new Date()): string {
+  return now.toLocaleDateString('en-CA', { timeZone })
+}
+
+function utcOffsetHours(timeZone: string, at: Date): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+  const parts = Object.fromEntries(
+    dtf
+      .formatToParts(at)
+      .filter((p) => p.type !== 'literal')
+      .map((p) => [p.type, p.value]),
+  )
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  )
+  return (asUtc - at.getTime()) / 3_600_000
+}
+
+function formatUsnoTz(hours: number): string {
+  const stepped = Math.round(hours * 4) / 4
+  return Number.isInteger(stepped) ? String(stepped) : stepped.toFixed(2)
+}
+
+function lonGuessOffsetHours(lon: number): number {
+  return Math.max(-12, Math.min(14, Math.round(lon / 15)))
+}
+
+function formatUsnoClock(raw: string | null | undefined): string | null {
+  if (!raw || raw === 'null') return null
+  const m = raw.trim().match(/^(\d{1,2}):(\d{2})/)
+  if (!m) return null
+  let hour = Number(m[1])
+  const minute = m[2]
+  if (!Number.isFinite(hour)) return null
+  const ap = hour >= 12 ? 'PM' : 'AM'
+  hour = hour % 12
+  if (hour === 0) hour = 12
+  return `${hour}:${minute}\u00A0${ap}`
+}
+
+function formatIllumination(raw: unknown): string | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const pct = raw <= 1 ? raw * 100 : raw
+    return `${Math.round(pct)}%`
+  }
+  if (typeof raw !== 'string') return null
+  const m = raw.replace(',', '.').match(/(\d+(?:\.\d+)?)/)
+  if (!m) return null
+  const n = Number(m[1])
+  if (!Number.isFinite(n)) return null
+  const pct = n <= 1 && !raw.includes('%') ? n * 100 : n
+  return `${Math.round(pct)}%`
+}
+
+async function fetchNwsTimeZone(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const res = await fetch(nwsPointsUrl(lat, lon), {
+    signal,
+    headers: NWS_FETCH_HEADERS,
+  })
+  if (!res.ok) return null
+  const data: unknown = await res.json()
+  const zone =
+    data && typeof data === 'object'
+      ? (data as { properties?: { timeZone?: unknown } }).properties?.timeZone
+      : undefined
+  return typeof zone === 'string' && zone.trim() ? zone.trim() : null
+}
+
+function parseUsnoOneday(data: unknown): SkywatchSunMoon {
+  if (data && typeof data === 'object' && 'error' in data) {
+    const err = (data as { error?: unknown }).error
+    if (err) throw new Error(typeof err === 'string' ? err : 'USNO returned an error')
+  }
+  const raw =
+    data && typeof data === 'object'
+      ? (data as { properties?: { data?: unknown } }).properties?.data
+      : undefined
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('USNO returned no sun/moon data')
+  }
+  const d = raw as {
+    curphase?: unknown
+    fracillum?: unknown
+    sundata?: unknown
+  }
+  const sundata = Array.isArray(d.sundata)
+    ? (d.sundata as { phen?: unknown; time?: unknown }[])
+    : []
+  const rise = sundata.find((x) => String(x.phen ?? '').toLowerCase() === 'rise')
+  const set = sundata.find((x) => String(x.phen ?? '').toLowerCase() === 'set')
+  const phase = typeof d.curphase === 'string' ? d.curphase.trim() : ''
+  return {
+    sunrise: formatUsnoClock(typeof rise?.time === 'string' ? rise.time : null),
+    sunset: formatUsnoClock(typeof set?.time === 'string' ? set.time : null),
+    moonPhase: phase || null,
+    illumination: formatIllumination(d.fracillum),
+  }
+}
+
 const badgeBase: React.CSSProperties = {
   flexShrink: 0,
   fontSize: '0.65rem',
@@ -1270,58 +1442,118 @@ function ForecastCard(props: {
   )
 }
 
-function SkywatchCard() {
+function SkywatchCard(props: {
+  phase: LivePhase
+  sunMoon: SkywatchSunMoon | null
+  nextEvent: NasaSkyEvent | null
+  errorMessage: string
+  fetchedAt: Date | null
+}) {
+  const { phase, sunMoon, nextEvent, errorMessage, fetchedAt } = props
+
+  let badge: { label: string; style: React.CSSProperties }
+  if (phase === 'loading') {
+    badge = {
+      label: '···',
+      style: {
+        ...badgeBase,
+        background: 'rgba(129, 140, 248, 0.08)',
+        borderColor: 'rgba(129, 140, 248, 0.28)',
+        color: 'rgba(196, 181, 253, 0.75)',
+      },
+    }
+  } else if (phase === 'error') {
+    badge = {
+      label: 'Issue',
+      style: {
+        ...badgeBase,
+        background: 'rgba(240, 120, 120, 0.12)',
+        borderColor: 'rgba(240, 140, 140, 0.4)',
+        color: 'rgba(255, 190, 190, 0.95)',
+      },
+    }
+  } else {
+    badge = {
+      label: 'Live',
+      style: {
+        ...badgeBase,
+        background: 'rgba(129, 140, 248, 0.1)',
+        borderColor: 'rgba(129, 140, 248, 0.35)',
+        color: 'rgba(196, 181, 253, 0.95)',
+      },
+    }
+  }
+
+  const sunrise = sunMoon?.sunrise ?? '—'
+  const sunset = sunMoon?.sunset ?? '—'
+  const moonLine =
+    sunMoon?.moonPhase && sunMoon.illumination
+      ? `${sunMoon.moonPhase} · ${sunMoon.illumination}`
+      : sunMoon?.moonPhase
+        ? sunMoon.moonPhase
+        : sunMoon?.illumination
+          ? sunMoon.illumination
+          : '—'
+
+  const eventTitle = nextEvent?.title ?? 'NASA skywatching tips'
+  const eventUrl = nextEvent?.url ?? 'https://science.nasa.gov/skywatching/whats-up/'
+  const eventNote = nextEvent?.note ?? 'Official monthly skywatching highlights from NASA.'
+
   return (
     <section className="card panel skywatch-card">
       <div style={panelHead}>
         <h2 className="card__title">Skywatch</h2>
-        <span
-          style={{
-            ...badgeBase,
-            background: 'rgba(129, 140, 248, 0.1)',
-            borderColor: 'rgba(129, 140, 248, 0.35)',
-            color: 'rgba(196, 181, 253, 0.95)',
-          }}
-        >
-          Clear
-        </span>
+        <span style={badge.style}>{badge.label}</span>
       </div>
 
-      <div className="panel__body skywatch">
-        <p className="skywatch__sunline">
-          <span>
-            <span className="skywatch__k">Sunrise</span> 6:32 AM
-          </span>
-          <span className="skywatch__pipe" aria-hidden="true">
-            |
-          </span>
-          <span>
-            <span className="skywatch__k">Sunset</span> 7:41 PM
-          </span>
+      {phase === 'loading' && (
+        <p className="panel__body">Loading sun and moon times from USNO…</p>
+      )}
+
+      {phase === 'error' && (
+        <p className="panel__body">
+          Could not load sun and moon times from the U.S. Naval Observatory
+          {errorMessage ? ` (${errorMessage})` : ''}.
         </p>
-        <div className="skywatch__row">
-          <span>Moon</span>
-          <span>Waxing Gibbous · 72%</span>
-        </div>
-        <p className="skywatch__next-label">Next up</p>
-        <p className="skywatch__event">
-          <a
-            className="skywatch__event-link"
-            href="https://science.nasa.gov/solar-system/meteors-meteorites/perseids/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Perseid meteor activity
-            <span className="skywatch__ext" aria-hidden="true">
-              {' '}
-              ↗
+      )}
+
+      {phase === 'ready' && (
+        <div className="panel__body skywatch">
+          <p className="skywatch__sunline">
+            <span>
+              <span className="skywatch__k">Sunrise</span> {sunrise}
             </span>
-          </a>
-        </p>
-        <p className="skywatch__hint">Best viewing: after midnight</p>
-      </div>
+            <span className="skywatch__pipe" aria-hidden="true">
+              |
+            </span>
+            <span>
+              <span className="skywatch__k">Sunset</span> {sunset}
+            </span>
+          </p>
+          <div className="skywatch__row">
+            <span>Moon</span>
+            <span>{moonLine}</span>
+          </div>
+          <p className="skywatch__next-label">Next up</p>
+          <p className="skywatch__event">
+            <a
+              className="skywatch__event-link"
+              href={eventUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {eventTitle}
+              <span className="skywatch__ext" aria-hidden="true">
+                {' '}
+                ↗
+              </span>
+            </a>
+          </p>
+          <p className="skywatch__hint">{eventNote}</p>
+        </div>
+      )}
 
-      <p className="card-footer">UPDATED · SKYWATCH · —</p>
+      <p className="card-footer">{formatUpdatedFooter('USNO / NASA', fetchedAt)}</p>
     </section>
   )
 }
@@ -1542,6 +1774,12 @@ function App() {
   const [forecastDays, setForecastDays] = useState<ForecastDay[]>([])
   const [forecastError, setForecastError] = useState('')
   const [forecastFetchedAt, setForecastFetchedAt] = useState<Date | null>(null)
+
+  const [skywatchPhase, setSkywatchPhase] = useState<LivePhase>('loading')
+  const [skywatchSunMoon, setSkywatchSunMoon] = useState<SkywatchSunMoon | null>(null)
+  const [skywatchEvent, setSkywatchEvent] = useState<NasaSkyEvent | null>(null)
+  const [skywatchError, setSkywatchError] = useState('')
+  const [skywatchFetchedAt, setSkywatchFetchedAt] = useState<Date | null>(null)
 
   const [preferMyLocation, setPreferMyLocation] = useState(false)
   const [coords, setCoords] = useState<GeoCoords>(VB_COORDS)
@@ -1873,6 +2111,86 @@ function App() {
     coords.longitude,
   ])
 
+  useEffect(() => {
+    if (preferMyLocation && geoPhase === 'locating') {
+      setSkywatchPhase('loading')
+      return
+    }
+
+    const point =
+      locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
+    const ctrl = new AbortController()
+    setSkywatchPhase('loading')
+    ;(async () => {
+      try {
+        let timeZone: string | null = null
+        try {
+          timeZone = await fetchNwsTimeZone(
+            point.latitude,
+            point.longitude,
+            ctrl.signal,
+          )
+        } catch {
+          timeZone = null
+        }
+        if (!timeZone && point.latitude === VB_LAT && point.longitude === VB_LON) {
+          timeZone = 'America/New_York'
+        }
+
+        const now = new Date()
+        let localYmd: string
+        let tzHours: number
+        if (timeZone) {
+          localYmd = localYmdInTimeZone(timeZone, now)
+          tzHours = utcOffsetHours(timeZone, now)
+        } else {
+          tzHours = lonGuessOffsetHours(point.longitude)
+          const shifted = new Date(now.getTime() + tzHours * 3_600_000)
+          const y = shifted.getUTCFullYear()
+          const m = String(shifted.getUTCMonth() + 1).padStart(2, '0')
+          const d = String(shifted.getUTCDate()).padStart(2, '0')
+          localYmd = `${y}-${m}-${d}`
+        }
+
+        setSkywatchEvent(nextNasaSkyEvent(localYmd))
+
+        const coordsParam =
+          point.latitude === VB_LAT && point.longitude === VB_LON
+            ? '36.8529,-75.9780'
+            : `${point.latitude.toFixed(4)},${point.longitude.toFixed(4)}`
+        const usnoUrl = `${USNO_ONEDAY_URL}?date=${encodeURIComponent(localYmd)}&coords=${encodeURIComponent(coordsParam)}&tz=${encodeURIComponent(formatUsnoTz(tzHours))}`
+        const usnoRes = await fetch(usnoUrl, { signal: ctrl.signal })
+        if (!usnoRes.ok) {
+          throw new Error(`USNO responded with ${usnoRes.status}`)
+        }
+        const usnoData: unknown = await usnoRes.json()
+        const sunMoon = parseUsnoOneday(usnoData)
+        if (!sunMoon.sunrise && !sunMoon.sunset && !sunMoon.moonPhase) {
+          throw new Error('USNO did not return usable sun/moon values')
+        }
+        setSkywatchSunMoon(sunMoon)
+        setSkywatchError('')
+        setSkywatchFetchedAt(new Date())
+        setSkywatchPhase('ready')
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') return
+        setSkywatchSunMoon(null)
+        setSkywatchError(
+          e instanceof Error ? e.message : 'Could not load skywatch data',
+        )
+        setSkywatchFetchedAt(null)
+        setSkywatchPhase('error')
+      }
+    })()
+    return () => ctrl.abort()
+  }, [
+    preferMyLocation,
+    geoPhase,
+    locationSource,
+    coords.latitude,
+    coords.longitude,
+  ])
+
   const usingCurrentLocation =
     locationSource === 'browser' && geoPhase === 'ready'
   const scoreLocationName = usingCurrentLocation
@@ -1940,7 +2258,13 @@ function App() {
           </div>
 
           <aside className="panels" aria-label="Condition panels">
-            <SkywatchCard />
+            <SkywatchCard
+              phase={skywatchPhase}
+              sunMoon={skywatchSunMoon}
+              nextEvent={skywatchEvent}
+              errorMessage={skywatchError}
+              fetchedAt={skywatchFetchedAt}
+            />
 
             <HurricanesCard
               phase={nhcPhase}

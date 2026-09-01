@@ -12,6 +12,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: () => '/CurrentStorms.json',
       },
+      '/api/usno-oneday': {
+        target: 'https://aa.usno.navy.mil',
+        changeOrigin: true,
+        rewrite: () => '/api/rstt/oneday',
+      },
     },
   },
 })
