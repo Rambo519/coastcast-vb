@@ -224,6 +224,22 @@ function pickDaytimeForecasts(
   return days
 }
 
+function cityStateFromRelativeLocation(rel: unknown): string | null {
+  if (!rel || typeof rel !== 'object') return null
+  const obj = rel as { properties?: unknown; city?: unknown; state?: unknown }
+  const nested =
+    obj.properties && typeof obj.properties === 'object'
+      ? (obj.properties as { city?: unknown; state?: unknown })
+      : null
+  const cityRaw = nested?.city ?? obj.city
+  const stateRaw = nested?.state ?? obj.state
+  const city = typeof cityRaw === 'string' ? cityRaw.trim() : ''
+  const state = typeof stateRaw === 'string' ? stateRaw.trim() : ''
+  if (city && state) return `${city}, ${state}`
+  if (city) return city
+  return null
+}
+
 async function fetchNwsPointLabel(
   lat: number,
   lon: number,
@@ -235,16 +251,7 @@ async function fetchNwsPointLabel(
   const data: unknown = await res.json()
   if (!data || typeof data !== 'object') return null
   const props = (data as { properties?: { relativeLocation?: unknown } }).properties
-  const rel = props?.relativeLocation
-  const relProps =
-    rel && typeof rel === 'object'
-      ? (rel as { properties?: { city?: unknown; state?: unknown } }).properties
-      : undefined
-  const city = typeof relProps?.city === 'string' ? relProps.city.trim() : ''
-  const state = typeof relProps?.state === 'string' ? relProps.state.trim() : ''
-  if (city && state) return `${city}, ${state}`
-  if (city) return city
-  return null
+  return cityStateFromRelativeLocation(props?.relativeLocation)
 }
 
 /** NOAA/NHC CurrentStorms.json — Vite proxy in dev, Vercel function in prod. */
@@ -1929,7 +1936,7 @@ function LocationPrefControl(props: {
 }) {
   const { source, phase, placeLabel, onUseMyLocation, onUseVirginiaBeach } = props
   const locating = phase === 'locating'
-  const usingBrowser = source === 'browser' && phase === 'ready'
+  const usingBrowser = source === 'browser'
   const failed =
     phase === 'denied' || phase === 'unavailable' || phase === 'timeout'
 
@@ -1947,10 +1954,12 @@ function LocationPrefControl(props: {
   return (
     <div className="score-summary__loc">
       <div className="score-summary__loc-main">
-        {locating && <span>Locating...</span>}
-        {usingBrowser && (
+        {locating && !usingBrowser && <span>Locating...</span>}
+        {usingBrowser && !failed && (
           <>
-            <span>{viewingCurrent}</span>
+            <span>
+              {locating && !placeLabel ? 'Locating...' : viewingCurrent}
+            </span>
             <button type="button" onClick={onUseVirginiaBeach}>
               Use Virginia Beach
             </button>
@@ -2075,6 +2084,7 @@ function App() {
     setCoords(next)
     setLocationSource('browser')
     setShowLocationOnboard(false)
+    setGeoPhase('ready')
     nwsLabelCtrl.current?.abort()
     const ctrl = new AbortController()
     nwsLabelCtrl.current = ctrl
@@ -2082,11 +2092,11 @@ function App() {
     try {
       label = await fetchNwsPointLabel(next.latitude, next.longitude, ctrl.signal)
     } catch {
+      if (ctrl.signal.aborted) return
       label = null
     }
-    if (seq !== geoSeq.current) return
+    if (seq !== geoSeq.current || ctrl.signal.aborted) return
     setPlaceLabel(label)
-    setGeoPhase('ready')
   }, [])
 
   const failBrowserPosition = useCallback(
