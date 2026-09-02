@@ -96,7 +96,10 @@
   line-height: 1;
   letter-spacing: 0;
   text-align: center;
-  font: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  font-style: inherit;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1, 'lnum' 1;
   text-box-trim: trim-both;
@@ -303,6 +306,7 @@
   justify-self: stretch;
   align-self: center;
   font-size: clamp(2.55rem, 5.1vw, 3.55rem);
+  font-weight: 800;
   line-height: 1;
   letter-spacing: 0;
   min-width: 6.5rem;
@@ -668,6 +672,7 @@
     place-items: center;
     place-content: center;
     font-size: 2.15rem;
+    font-weight: 800;
     line-height: 1;
     letter-spacing: 0;
     width: 100%;
