@@ -1848,6 +1848,78 @@ function ScoreStatusTicker(props: {
   )
 }
 
+const COASTCAST_PUBLIC_URL = 'https://coastcast-vb.vercel.app'
+
+function coastCastShareUrl(): string {
+  if (typeof window === 'undefined') return COASTCAST_PUBLIC_URL
+  const { hostname, origin, protocol } = window.location
+  const local =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '[::1]' ||
+    hostname.endsWith('.local')
+  if (!local && (protocol === 'http:' || protocol === 'https:') && origin) {
+    return origin
+  }
+  return COASTCAST_PUBLIC_URL
+}
+
+function ShareControl() {
+  const [copied, setCopied] = useState(false)
+  const copiedTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current != null) window.clearTimeout(copiedTimer.current)
+    }
+  }, [])
+
+  const onShare = async () => {
+    const url = coastCastShareUrl()
+    const title = 'CoastCast'
+    const text = 'Check local weather, hazards, radar, forecasts and more with CoastCast.'
+    try {
+      if (typeof navigator.share === 'function') {
+        await navigator.share({ title, text, url })
+        return
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return
+    }
+    try {
+      if (!navigator.clipboard?.writeText) return
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      if (copiedTimer.current != null) window.clearTimeout(copiedTimer.current)
+      copiedTimer.current = window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      /* fail quietly */
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="score-summary__share"
+      onClick={() => {
+        void onShare()
+      }}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="18" cy="5" r="2.2" />
+        <circle cx="6" cy="12" r="2.2" />
+        <circle cx="18" cy="19" r="2.2" />
+        <path
+          d="M8.1 10.8 15.8 6.4M8.1 13.2l7.7 4.4"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+        />
+      </svg>
+      {copied ? 'Copied!' : 'Share'}
+    </button>
+  )
+}
+
 function LocationPrefControl(props: {
   source: LocationSource
   phase: GeoPhase
@@ -1873,33 +1945,36 @@ function LocationPrefControl(props: {
         : 'Location unavailable — using Virginia Beach'
 
   return (
-    <p className="score-summary__loc">
-      {locating && <span>Locating...</span>}
-      {usingBrowser && (
-        <>
-          <span>{viewingCurrent}</span>
-          <button type="button" onClick={onUseVirginiaBeach}>
-            Use Virginia Beach
-          </button>
-        </>
-      )}
-      {failed && (
-        <>
-          <span>{failMessage}</span>
-          <button type="button" onClick={onUseMyLocation}>
-            Retry location
-          </button>
-        </>
-      )}
-      {!locating && !usingBrowser && !failed && (
-        <>
-          <span>Viewing: Virginia Beach, VA · Default</span>
-          <button type="button" onClick={onUseMyLocation}>
-            Use my location
-          </button>
-        </>
-      )}
-    </p>
+    <div className="score-summary__loc">
+      <div className="score-summary__loc-main">
+        {locating && <span>Locating...</span>}
+        {usingBrowser && (
+          <>
+            <span>{viewingCurrent}</span>
+            <button type="button" onClick={onUseVirginiaBeach}>
+              Use Virginia Beach
+            </button>
+          </>
+        )}
+        {failed && (
+          <>
+            <span>{failMessage}</span>
+            <button type="button" onClick={onUseMyLocation}>
+              Retry location
+            </button>
+          </>
+        )}
+        {!locating && !usingBrowser && !failed && (
+          <>
+            <span>Viewing: Virginia Beach, VA · Default</span>
+            <button type="button" onClick={onUseMyLocation}>
+              Use my location
+            </button>
+          </>
+        )}
+      </div>
+      <ShareControl />
+    </div>
   )
 }
 

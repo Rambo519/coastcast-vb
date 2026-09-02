@@ -332,8 +332,10 @@
 .score-status {
   margin: 0.18rem 0 0;
   min-width: 0;
+}
+
+.score-status.score-summary__metric--pending {
   --score-tone: #94a3b8;
-  --score-tone-soft: rgba(148, 163, 184, 0.86);
   --score-glow: rgba(148, 163, 184, 0.22);
 }
 
@@ -352,8 +354,8 @@
   height: 0.5rem;
   border-radius: 50%;
   flex-shrink: 0;
-  background: var(--score-tone);
-  box-shadow: 0 0 8px var(--score-glow);
+  background: var(--score-tone, #94a3b8);
+  box-shadow: 0 0 8px var(--score-glow, rgba(148, 163, 184, 0.22));
 }
 
 .score-status__label {
@@ -361,7 +363,52 @@
   font-size: 0.8125rem;
   font-weight: 800;
   letter-spacing: 0.08em;
-  color: var(--score-tone);
+  color: var(--score-tone, #94a3b8);
+}
+
+.score-status.score-summary__metric--t0 .score-status__dot,
+.score-status.score-summary__metric--t0 .score-status__label {
+  color: #5ea872;
+}
+.score-status.score-summary__metric--t0 .score-status__dot {
+  background: #5ea872;
+  box-shadow: 0 0 8px rgba(94, 168, 114, 0.28);
+}
+
+.score-status.score-summary__metric--t1 .score-status__dot,
+.score-status.score-summary__metric--t1 .score-status__label {
+  color: #a4b14d;
+}
+.score-status.score-summary__metric--t1 .score-status__dot {
+  background: #a4b14d;
+  box-shadow: 0 0 8px rgba(164, 177, 77, 0.26);
+}
+
+.score-status.score-summary__metric--t2 .score-status__dot,
+.score-status.score-summary__metric--t2 .score-status__label {
+  color: #d1b64a;
+}
+.score-status.score-summary__metric--t2 .score-status__dot {
+  background: #d1b64a;
+  box-shadow: 0 0 8px rgba(209, 182, 74, 0.26);
+}
+
+.score-status.score-summary__metric--t3 .score-status__dot,
+.score-status.score-summary__metric--t3 .score-status__label {
+  color: #d1843d;
+}
+.score-status.score-summary__metric--t3 .score-status__dot {
+  background: #d1843d;
+  box-shadow: 0 0 8px rgba(209, 132, 61, 0.28);
+}
+
+.score-status.score-summary__metric--t4 .score-status__dot,
+.score-status.score-summary__metric--t4 .score-status__label {
+  color: #d15d58;
+}
+.score-status.score-summary__metric--t4 .score-status__dot {
+  background: #d15d58;
+  box-shadow: 0 0 8px rgba(209, 93, 88, 0.3);
 }
 
 .score-status__dash {
@@ -466,15 +513,26 @@
 .score-summary__loc {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   column-gap: 0.7rem;
-  row-gap: 0.18rem;
+  row-gap: 0.28rem;
   margin: 0.32rem 0 0;
   font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: 0.018em;
   color: var(--text-muted);
   line-height: 1.35;
+}
+
+.score-summary__loc-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.7rem;
+  row-gap: 0.18rem;
+  min-width: 0;
+  flex: 1 1 12rem;
 }
 
 .score-summary__loc button {
@@ -498,6 +556,38 @@
 .score-summary__loc button:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.score-summary__share {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  margin-left: auto;
+  min-height: 2rem;
+  padding: 0.2rem 0.05rem;
+  color: #7dd3fc;
+  border-bottom-color: rgba(125, 211, 252, 0.28);
+}
+
+.score-summary__share svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+}
+
+.score-summary__share svg circle {
+  fill: currentColor;
+  stroke: none;
+}
+
+.score-summary__share svg path {
+  fill: none;
+  stroke: currentColor;
+}
+
+.score-summary__share:hover {
+  color: #bae6fd;
+  border-bottom-color: rgba(186, 230, 253, 0.5);
 }
 
 @media (max-width: 600px) {
@@ -598,6 +688,14 @@
 
   .score-ticker__track {
     font-size: 0.71875rem;
+  }
+
+  .score-summary__loc {
+    align-items: flex-start;
+  }
+
+  .score-summary__share {
+    min-height: 2.25rem;
   }
 }
 
