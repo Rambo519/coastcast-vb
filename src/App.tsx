@@ -7,6 +7,7 @@ import {
   isAtlanticNhcStorm,
   loadStormProducts,
   relevancePlacePhrase,
+  stormHeadline,
   tropicalWatchWarningFromAlerts,
   type HurricaneEval,
   type HurricaneRelevance,
@@ -1674,40 +1675,102 @@ function SkywatchCard(props: {
   )
 }
 
-function scoreTickerItems(blurb: string): string[] {
-  const trimmed = blurb.trim().replace(/\.$/u, '')
-  if (trimmed.startsWith('Quiet overall')) {
-    return ['No nearby quakes', 'No active weather alerts', 'No Atlantic tropical systems']
+function scoreStatusHeadline(score: number | null): { label: string; summary: string } {
+  if (score == null) return { label: 'LOADING', summary: 'Checking latest conditions' }
+  if (score <= 19) return { label: 'CALM', summary: 'No immediate local threats' }
+  if (score <= 39) return { label: 'GUARDED', summary: 'A few conditions to watch' }
+  if (score <= 59) return { label: 'ELEVATED', summary: 'Conditions need attention' }
+  if (score <= 79) return { label: 'HIGH', summary: 'Active hazards nearby' }
+  return { label: 'SEVERE', summary: 'Take action on active warnings' }
+}
+
+function nwsTickerAlerts(alerts: NwsAlertFeature[]): string[] {
+  const events: string[] = []
+  for (const alert of alerts) {
+    const event = (alert.properties?.event ?? '').trim()
+    if (event && !events.includes(event)) events.push(event)
   }
-  if (trimmed.startsWith('Checking latest conditions')) {
+  if (events.length === 0) {
+    return [
+      `${alerts.length} active weather alert${alerts.length === 1 ? '' : 's'}`,
+    ]
+  }
+  if (events.length <= 3) return events
+  return [...events.slice(0, 2), `${alerts.length} active weather alerts`]
+}
+
+function buildScoreTickerItems(input: {
+  quakePhase: LivePhase
+  nwsPhase: LivePhase
+  nhcPhase: LivePhase
+  quakes: UsgsFeature[]
+  alerts: NwsAlertFeature[]
+  atlanticStorms: NhcStorm[]
+}): string[] {
+  const { quakePhase, nwsPhase, nhcPhase, quakes, alerts, atlanticStorms } = input
+  if (quakePhase === 'loading' || nwsPhase === 'loading') {
     return ['Checking latest conditions']
   }
-  if (trimmed.startsWith('Conditions around')) {
-    return [trimmed]
+
+  const important: string[] = []
+  const info: string[] = []
+
+  if (nwsPhase === 'error') important.push('Weather alerts unavailable')
+  else if (alerts.length > 0) important.push(...nwsTickerAlerts(alerts))
+  else info.push('No active weather alerts')
+
+  if (nhcPhase === 'error') important.push('Tropical system data unavailable')
+  else if (nhcPhase === 'loading') info.push('Checking tropical systems')
+  else if (atlanticStorms.length === 1) {
+    important.push(stormHeadline(atlanticStorms[0]))
+  } else if (atlanticStorms.length > 1) {
+    important.push(
+      `${atlanticStorms.length} Atlantic tropical systems`,
+    )
+  } else {
+    info.push('No Atlantic tropical systems')
   }
-  return trimmed
-    .split(', ')
-    .map((s) => s.replace(/\.$/u, '').trim())
-    .filter(Boolean)
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+
+  if (quakePhase === 'error') important.push('Earthquake data unavailable')
+  else if (quakes.length > 0) {
+    const mag = maxQuakeMag(quakes)
+    important.push(
+      mag != null
+        ? `Strongest nearby quake M ${mag.toFixed(1)}`
+        : 'Nearby quake activity',
+    )
+  } else {
+    info.push('No nearby quakes')
+  }
+
+  return [...important, ...info]
 }
 
-function statusDotClass(status: string): string {
-  const key = status.toLowerCase()
-  if (key === 'calm') return 'score-ticker__dot--calm'
-  if (key === 'guarded') return 'score-ticker__dot--guarded'
-  if (key === 'elevated') return 'score-ticker__dot--elevated'
-  if (key === 'high') return 'score-ticker__dot--high'
-  return 'score-ticker__dot--loading'
-}
-
-function ScoreStatusTicker(props: { status: string; blurb: string }) {
-  const { status, blurb } = props
-  const items = scoreTickerItems(blurb)
+function ScoreStatusTicker(props: {
+  score: number | null
+  quakePhase: LivePhase
+  nwsPhase: LivePhase
+  nhcPhase: LivePhase
+  quakes: UsgsFeature[]
+  alerts: NwsAlertFeature[]
+  atlanticStorms: NhcStorm[]
+}) {
+  const { score, quakePhase, nwsPhase, nhcPhase, quakes, alerts, atlanticStorms } =
+    props
+  const headline = scoreStatusHeadline(score)
+  const items = buildScoreTickerItems({
+    quakePhase,
+    nwsPhase,
+    nhcPhase,
+    quakes,
+    alerts,
+    atlanticStorms,
+  })
   const viewportRef = useRef<HTMLDivElement>(null)
   const measureRef = useRef<HTMLDivElement>(null)
   const [overflowing, setOverflowing] = useState(false)
   const [reduceMotion, setReduceMotion] = useState(false)
+  const itemKey = items.join('|')
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -1729,20 +1792,20 @@ function ScoreStatusTicker(props: { status: string; blurb: string }) {
     ro.observe(vp)
     ro.observe(measure)
     return () => ro.disconnect()
-  }, [status, blurb])
+  }, [itemKey])
 
   const scrolling = overflowing && !reduceMotion
   const wrapping = overflowing && reduceMotion
 
   const line = (
     <>
-      <span className={`score-ticker__dot ${statusDotClass(status)}`} aria-hidden="true" />
-      <span className="score-ticker__status">{status.toUpperCase()}</span>
       {items.map((item, i) => (
         <span key={`${item}-${i}`} className="score-ticker__seg">
-          <span className="score-ticker__sep" aria-hidden="true">
-            ·
-          </span>
+          {i > 0 ? (
+            <span className="score-ticker__sep" aria-hidden="true">
+              ·
+            </span>
+          ) : null}
           {item}
         </span>
       ))}
@@ -1750,26 +1813,36 @@ function ScoreStatusTicker(props: { status: string; blurb: string }) {
   )
 
   return (
-    <div
-      className={
-        wrapping ? 'score-ticker score-ticker--wrap' : 'score-ticker'
-      }
-      ref={viewportRef}
-    >
-      <div className="score-ticker__measure" ref={measureRef} aria-hidden="true">
-        {line}
-      </div>
+    <div className={`score-status ${scoreToneClass(score)}`}>
+      <p className="score-status__line">
+        <span className="score-status__dot" aria-hidden="true" />
+        <span className="score-status__label">{headline.label}</span>
+        <span className="score-status__dash" aria-hidden="true">
+          —
+        </span>
+        <span className="score-status__summary">{headline.summary}</span>
+      </p>
       <div
         className={
-          scrolling ? 'score-ticker__track is-scroll' : 'score-ticker__track'
+          wrapping ? 'score-ticker score-ticker--wrap' : 'score-ticker'
         }
+        ref={viewportRef}
       >
-        <span className="score-ticker__copy">{line}</span>
-        {scrolling ? (
-          <span className="score-ticker__copy" aria-hidden="true">
-            {line}
-          </span>
-        ) : null}
+        <div className="score-ticker__measure" ref={measureRef} aria-hidden="true">
+          {line}
+        </div>
+        <div
+          className={
+            scrolling ? 'score-ticker__track is-scroll' : 'score-ticker__track'
+          }
+        >
+          <span className="score-ticker__copy">{line}</span>
+          {scrolling ? (
+            <span className="score-ticker__copy" aria-hidden="true">
+              {line}
+            </span>
+          ) : null}
+        </div>
       </div>
     </div>
   )
@@ -2350,7 +2423,15 @@ function App() {
                   <p className="score-summary__status">Status · {score.status}</p>
                 </div>
               </div>
-              <ScoreStatusTicker status={score.status} blurb={score.blurb} />
+              <ScoreStatusTicker
+                score={score.score}
+                quakePhase={quakePhase}
+                nwsPhase={weatherAlertPhase}
+                nhcPhase={nhcPhase}
+                quakes={quakes}
+                alerts={weatherAlerts}
+                atlanticStorms={atlanticStorms}
+              />
               <LocationPrefControl
                 source={locationSource}
                 phase={geoPhase}
