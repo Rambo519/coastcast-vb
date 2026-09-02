@@ -1493,8 +1493,13 @@ function ForecastCard(props: {
   days: ForecastDay[]
   errorMessage: string
   fetchedAt: Date | null
+  officialForecastUrl: string | null
 }) {
-  const { phase, days, errorMessage, fetchedAt } = props
+  const { phase, days, errorMessage, fetchedAt, officialForecastUrl } = props
+  const forecastPageUrl =
+    officialForecastUrl && isUsableHttpUrl(officialForecastUrl)
+      ? officialForecastUrl
+      : null
 
   let badge: { label: string; style: React.CSSProperties }
   if (phase === 'loading') {
@@ -1582,6 +1587,22 @@ function ForecastCard(props: {
           ))}
         </div>
       )}
+
+      {forecastPageUrl ? (
+        <p className="forecast-more">
+          <a
+            href={forecastPageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            5-Day Forecast
+            <span className="forecast-more__ext" aria-hidden="true">
+              {' '}
+              ↗
+            </span>
+          </a>
+        </p>
+      ) : null}
 
       <p className="card-footer">{formatUpdatedFooter('NWS', fetchedAt)}</p>
     </section>
@@ -2069,6 +2090,7 @@ function App() {
   const [forecastDays, setForecastDays] = useState<ForecastDay[]>([])
   const [forecastError, setForecastError] = useState('')
   const [forecastFetchedAt, setForecastFetchedAt] = useState<Date | null>(null)
+  const [forecastOfficialUrl, setForecastOfficialUrl] = useState<string | null>(null)
 
   const [skywatchPhase, setSkywatchPhase] = useState<LivePhase>('loading')
   const [skywatchSunMoon, setSkywatchSunMoon] = useState<SkywatchSunMoon | null>(null)
@@ -2324,6 +2346,7 @@ function App() {
   useEffect(() => {
     if (preferMyLocation && geoPhase === 'locating') {
       setForecastPhase('loading')
+      setForecastOfficialUrl(null)
       return
     }
 
@@ -2386,6 +2409,7 @@ function App() {
         }
 
         setForecastDays(pickDaytimeForecasts(periods, hourly))
+        setForecastOfficialUrl(forecastUrl)
         setForecastError('')
         setForecastFetchedAt(new Date())
         setForecastPhase('ready')
@@ -2395,6 +2419,7 @@ function App() {
           e instanceof Error ? e.message : 'Could not load forecast',
         )
         setForecastDays([])
+        setForecastOfficialUrl(null)
         setForecastPhase('error')
       }
     })()
@@ -2599,6 +2624,7 @@ function App() {
               days={forecastDays}
               errorMessage={forecastError}
               fetchedAt={forecastFetchedAt}
+              officialForecastUrl={forecastOfficialUrl}
             />
           </aside>
         </div>

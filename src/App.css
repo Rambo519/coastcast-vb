@@ -1435,6 +1435,29 @@
   line-height: 1.35;
 }
 
+.forecast-more {
+  margin: 0.55rem 0 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.panels .panel--nature .forecast-more a {
+  color: var(--accent-nature);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(74, 222, 128, 0.35);
+}
+
+.panels .panel--nature .forecast-more a:hover {
+  border-bottom-color: rgba(74, 222, 128, 0.7);
+}
+
+.forecast-more__ext {
+  font-size: 0.78em;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
 @media (max-width: 900px) {
   .forecast__day {
     flex: 0 0 auto;
