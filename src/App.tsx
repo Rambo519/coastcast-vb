@@ -1975,57 +1975,35 @@ function LocationPrefControl(props: {
   phase: GeoPhase
   placeLabel: string | null
   onUseMyLocation: () => void
-  onUseVirginiaBeach: () => void
 }) {
-  const { source, phase, placeLabel, onUseMyLocation, onUseVirginiaBeach } = props
+  const { source, phase, placeLabel, onUseMyLocation } = props
   const locating = phase === 'locating'
   const usingBrowser = source === 'browser'
   const failed =
     phase === 'denied' || phase === 'unavailable' || phase === 'timeout'
 
-  const viewingCurrent = placeLabel
-    ? `Viewing: ${placeLabel} · Current location`
-    : 'Viewing: Current location'
+  const viewingLine = placeLabel
+    ? `Viewing: ${placeLabel}`
+    : locating || usingBrowser
+      ? 'Viewing: Current location'
+      : 'Viewing: Virginia Beach, VA'
 
   const failMessage =
     phase === 'denied'
       ? 'Location permission denied — using Virginia Beach'
       : phase === 'timeout'
         ? 'Location timed out — using Virginia Beach'
-        : 'Location unavailable — using Virginia Beach'
+        : phase === 'unavailable'
+          ? 'Location unavailable — using Virginia Beach'
+          : null
 
   return (
     <div className="score-summary__loc">
-      <div className="score-summary__loc-main">
-        {locating && !usingBrowser && <span>Locating...</span>}
-        {usingBrowser && !failed && (
-          <>
-            <span>
-              {locating && !placeLabel ? 'Locating...' : viewingCurrent}
-            </span>
-            <button type="button" onClick={onUseVirginiaBeach}>
-              Use Virginia Beach
-            </button>
-          </>
-        )}
-        {failed && (
-          <>
-            <span>{failMessage}</span>
-            <button type="button" onClick={onUseMyLocation}>
-              Retry location
-            </button>
-          </>
-        )}
-        {!locating && !usingBrowser && !failed && (
-          <>
-            <span>Viewing: Virginia Beach, VA · Default</span>
-            <button type="button" onClick={onUseMyLocation}>
-              Use my location
-            </button>
-          </>
-        )}
-      </div>
-      <ShareControl />
+      <span>{viewingLine}</span>
+      {failed && failMessage ? <span>{failMessage}</span> : null}
+      <button type="button" onClick={onUseMyLocation} disabled={locating}>
+        Use my location
+      </button>
     </div>
   )
 }
@@ -2536,17 +2514,19 @@ function App() {
             <section className="card score-summary" aria-label={`${scoreLocationName} relevance score`}>
               <div className="score-summary__row">
                 <div className="score-summary__intro">
-                  <h1 className="brand">
-                    <span className="brand__coast">Coast</span>
-                    <span className="brand__cast">Cast</span>
-                  </h1>
+                  <div className="score-summary__head">
+                    <h1 className="brand">
+                      <span className="brand__coast">Coast</span>
+                      <span className="brand__cast">Cast</span>
+                    </h1>
+                    <ShareControl />
+                  </div>
                   <p className="score-summary__place">Local Area Weather Conditions</p>
                   <LocationPrefControl
                     source={locationSource}
                     phase={geoPhase}
                     placeLabel={placeLabel}
                     onUseMyLocation={useMyLocation}
-                    onUseVirginiaBeach={useVirginiaBeach}
                   />
                 </div>
                 <div className={`score-summary__metric ${scoreToneClass(score.score)}`}>
