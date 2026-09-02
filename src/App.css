@@ -1109,6 +1109,15 @@
   border-bottom-color: rgba(56, 189, 248, 0.55);
 }
 
+.hurricanes-card .hurricane-name-link {
+  color: inherit;
+  border-bottom-color: rgba(56, 189, 248, 0.32);
+}
+
+.hurricanes-card .hurricane-name-link:hover {
+  border-bottom-color: rgba(56, 189, 248, 0.7);
+}
+
 .hurricanes-card .nhc-forecast-ext {
   font-size: 0.78em;
   font-weight: 600;

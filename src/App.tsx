@@ -1285,7 +1285,18 @@ function HurricanesCard(props: {
       {phase === 'ready' && primary && (
         <div className="panel__body">
           <p style={{ margin: 0 }}>
-            <strong>{primary.headline}</strong>
+            {primary.officialUrl ? (
+              <a
+                className="hurricane-name-link"
+                href={primary.officialUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <strong>{primary.headline}</strong>
+              </a>
+            ) : (
+              <strong>{primary.headline}</strong>
+            )}
           </p>
           <p className="hurricane-relevance">Relevance to {place}</p>
           <dl className="hurricane-stats">
@@ -1344,7 +1355,18 @@ function HurricanesCard(props: {
                     className="hurricane-others__item"
                   >
                     <p className="hurricane-others__name">
-                      <strong>{row.headline}</strong>
+                      {row.officialUrl ? (
+                        <a
+                          className="hurricane-name-link"
+                          href={row.officialUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <strong>{row.headline}</strong>
+                        </a>
+                      ) : (
+                        <strong>{row.headline}</strong>
+                      )}
                     </p>
                     <p className="hurricane-others__meta">
                       {bits.join(' · ')}
