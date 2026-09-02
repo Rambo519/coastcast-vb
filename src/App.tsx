@@ -2542,14 +2542,6 @@ function App() {
           </div>
 
           <aside className="panels" aria-label="Condition panels">
-            <SkywatchCard
-              phase={skywatchPhase}
-              sunMoon={skywatchSunMoon}
-              nextEvent={skywatchEvent}
-              errorMessage={skywatchError}
-              fetchedAt={skywatchFetchedAt}
-            />
-
             <HurricanesCard
               phase={nhcPhase}
               storms={atlanticStorms}
@@ -2570,6 +2562,14 @@ function App() {
               fetchedAt={quakeFetchedAt}
               usingCurrentLocation={usingCurrentLocation}
               placeLabel={placeLabel}
+            />
+
+            <SkywatchCard
+              phase={skywatchPhase}
+              sunMoon={skywatchSunMoon}
+              nextEvent={skywatchEvent}
+              errorMessage={skywatchError}
+              fetchedAt={skywatchFetchedAt}
             />
 
             <ForecastCard
