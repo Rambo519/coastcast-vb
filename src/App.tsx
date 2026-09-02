@@ -2545,6 +2545,13 @@ function App() {
                     <span className="brand__cast">Cast</span>
                   </h1>
                   <p className="score-summary__place">{scorePlaceLine}</p>
+                  <LocationPrefControl
+                    source={locationSource}
+                    phase={geoPhase}
+                    placeLabel={placeLabel}
+                    onUseMyLocation={useMyLocation}
+                    onUseVirginiaBeach={useVirginiaBeach}
+                  />
                 </div>
                 <div className={`score-summary__metric ${scoreToneClass(score.score)}`}>
                   <div className="score-summary__value" aria-hidden="true">
@@ -2563,13 +2570,6 @@ function App() {
                 quakes={quakes}
                 alerts={weatherAlerts}
                 atlanticStorms={atlanticStorms}
-              />
-              <LocationPrefControl
-                source={locationSource}
-                phase={geoPhase}
-                placeLabel={placeLabel}
-                onUseMyLocation={useMyLocation}
-                onUseVirginiaBeach={useVirginiaBeach}
               />
             </section>
               <NwsAlertsCard

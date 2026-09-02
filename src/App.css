@@ -251,10 +251,10 @@
 .dashboard__left .score-summary__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(7.5rem, auto);
-  align-items: center;
+  align-items: start;
   column-gap: 1.35rem;
   row-gap: 0;
-  margin-bottom: 0.38rem;
+  margin-bottom: 0.28rem;
 }
 
 .dashboard__left .score-summary__intro {
@@ -289,7 +289,7 @@
 
 .dashboard__left .score-summary__metric {
   justify-self: end;
-  align-self: center;
+  align-self: start;
   align-items: center;
   min-width: 7.75rem;
   padding: 0;
@@ -330,8 +330,10 @@
 }
 
 .score-status {
-  margin: 0.18rem 0 0;
+  margin-top: auto;
+  padding-top: 0.2rem;
   min-width: 0;
+  width: 100%;
 }
 
 .score-status.score-summary__metric--pending {
@@ -516,8 +518,8 @@
   align-items: center;
   justify-content: space-between;
   column-gap: 0.7rem;
-  row-gap: 0.28rem;
-  margin: 0.32rem 0 0;
+  row-gap: 0.2rem;
+  margin: 0.18rem 0 0;
   font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: 0.018em;
@@ -533,6 +535,8 @@
   row-gap: 0.18rem;
   min-width: 0;
   flex: 1 1 12rem;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 .score-summary__loc button {
@@ -605,7 +609,7 @@
   .dashboard__left .score-summary__row {
     grid-template-columns: minmax(0, 1fr) 112px;
     column-gap: 0.65rem;
-    align-items: center;
+    align-items: start;
     min-width: 0;
   }
 
@@ -692,10 +696,15 @@
 
   .score-summary__loc {
     align-items: flex-start;
+    margin-top: 0.14rem;
+  }
+
+  .score-summary__loc-main {
+    flex: 1 1 100%;
   }
 
   .score-summary__share {
-    min-height: 2.25rem;
+    min-height: 1.85rem;
   }
 }
 
