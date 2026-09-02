@@ -2517,10 +2517,6 @@ function App() {
   const scoreLocationName = usingCurrentLocation
     ? (placeLabel ?? 'your location')
     : 'Virginia Beach'
-  const scorePlaceLine = usingCurrentLocation
-    ? `${placeLabel ?? 'Your location'} coastal conditions`
-    : 'Virginia Beach coastal conditions'
-
   const score = computeVbScore({
     quakePhase,
     nwsPhase: weatherAlertPhase,
@@ -2544,7 +2540,7 @@ function App() {
                     <span className="brand__coast">Coast</span>
                     <span className="brand__cast">Cast</span>
                   </h1>
-                  <p className="score-summary__place">{scorePlaceLine}</p>
+                  <p className="score-summary__place">Local Area Weather Conditions</p>
                   <LocationPrefControl
                     source={locationSource}
                     phase={geoPhase}
