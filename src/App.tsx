@@ -332,7 +332,19 @@ function shouldShowMobileLocationOnboard(): boolean {
   return true
 }
 
-function requestBrowserLocation(): Promise<GeoCoords> {
+const GEO_PRIMARY_OPTIONS: PositionOptions = {
+  enableHighAccuracy: false,
+  timeout: 20_000,
+  maximumAge: 300_000,
+}
+
+const GEO_TIMEOUT_RETRY_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 20_000,
+  maximumAge: 300_000,
+}
+
+function getCurrentPositionOnce(options: PositionOptions): Promise<GeoCoords> {
   return new Promise((resolve, reject) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       reject({ code: 2 })
@@ -345,9 +357,28 @@ function requestBrowserLocation(): Promise<GeoCoords> {
           longitude: pos.coords.longitude,
         }),
       (err) => reject(err),
-      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+      options,
     )
   })
+}
+
+function isGeolocationTimeout(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === 'object' &&
+    'code' in err &&
+    Number((err as { code: unknown }).code) === 3
+  )
+}
+
+/** Primary: Wi-Fi/cellular fix. On timeout only, one high-accuracy retry. Denied never retries. */
+async function requestBrowserLocation(): Promise<GeoCoords> {
+  try {
+    return await getCurrentPositionOnce(GEO_PRIMARY_OPTIONS)
+  } catch (err: unknown) {
+    if (!isGeolocationTimeout(err)) throw err
+    return getCurrentPositionOnce(GEO_TIMEOUT_RETRY_OPTIONS)
+  }
 }
 
 function geoPhaseFromError(err: unknown): GeoPhase {
