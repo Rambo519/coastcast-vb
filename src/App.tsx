@@ -24,25 +24,21 @@ const VB_LAT = 36.8529
 const VB_LON = -75.978
 
 /** Bump this when shipping a new CoastCast release. */
-const APP_VERSION = '0.9.4'
-
-/** User-facing default when CoastCast is on its internal VB fallback coordinates. */
-const DEFAULT_PLACE_LABEL = 'Virginia Beach, VA'
+const APP_VERSION = '0.9.6'
 
 /**
- * Single shared active-location display label for all cards.
- * GPS + unresolved City/ST → "Current location" (never temporary Virginia Beach).
+ * Shared active-location display label.
+ * No city is invented — Virginia Beach only appears when NWS resolves it for real coords.
  */
 function activePlaceLabel(
-  usingCurrentLocation: boolean,
+  hasActiveLocation: boolean,
   placeLabel: string | null,
 ): string {
-  if (usingCurrentLocation) return placeLabel ?? 'Current location'
-  return DEFAULT_PLACE_LABEL
+  if (!hasActiveLocation) return 'Location unavailable'
+  return placeLabel ?? 'Current location'
 }
 
 const USE_MY_LOCATION_PREF_KEY = 'coastcast-use-my-location'
-const CHOSE_VB_PREF_KEY = 'coastcast-chose-virginia-beach'
 const LOCATION_ONBOARDED_PREF_KEY = 'coastcast-location-onboarded'
 const MOBILE_LOC_MQ = '(max-width: 600px)'
 
@@ -288,10 +284,7 @@ const NHC_FETCH_HEADERS = {
 type LivePhase = 'loading' | 'error' | 'ready'
 
 type GeoCoords = { latitude: number; longitude: number }
-type LocationSource = 'virginia-beach' | 'browser'
 type GeoPhase = 'idle' | 'locating' | 'ready' | 'denied' | 'unavailable' | 'timeout'
-
-const VB_COORDS: GeoCoords = { latitude: VB_LAT, longitude: VB_LON }
 
 function readUseMyLocationPref(): boolean {
   try {
@@ -327,14 +320,6 @@ function writePrefFlag(key: string, enabled: boolean): void {
   }
 }
 
-function readChoseVirginiaBeachPref(): boolean {
-  return readPrefFlag(CHOSE_VB_PREF_KEY)
-}
-
-function writeChoseVirginiaBeachPref(enabled: boolean): void {
-  writePrefFlag(CHOSE_VB_PREF_KEY, enabled)
-}
-
 function readLocationOnboardedPref(): boolean {
   return readPrefFlag(LOCATION_ONBOARDED_PREF_KEY)
 }
@@ -349,7 +334,7 @@ function isMobileLocationViewport(): boolean {
 
 function shouldShowMobileLocationOnboard(): boolean {
   if (!isMobileLocationViewport()) return false
-  if (readUseMyLocationPref() || readChoseVirginiaBeachPref() || readLocationOnboardedPref()) {
+  if (readUseMyLocationPref() || readLocationOnboardedPref()) {
     return false
   }
   return true
@@ -589,6 +574,21 @@ function lonGuessOffsetHours(lon: number): number {
   return Math.max(-12, Math.min(14, Math.round(lon / 15)))
 }
 
+/** Device IANA zone when NWS timezone is unavailable. */
+function browserTimeZone(): string | null {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (typeof tz !== 'string') return null
+    const trimmed = tz.trim()
+    if (!trimmed) return null
+    // Throws RangeError for non-IANA / unsupported zone IDs.
+    Intl.DateTimeFormat(undefined, { timeZone: trimmed })
+    return trimmed
+  } catch {
+    return null
+  }
+}
+
 function formatUsnoClock(raw: string | null | undefined): string | null {
   if (!raw || raw === 'null') return null
   const m = raw.trim().match(/^(\d{1,2}):(\d{2})/)
@@ -692,9 +692,6 @@ const quakeLine: React.CSSProperties = {
 
 type WindyLayer = 'radar' | 'wind' | 'rain'
 
-const VB_WINDY_LAT = '36.8529'
-const VB_WINDY_LON = '-75.9780'
-
 function windyEmbedUrl(overlay: WindyLayer, lat: string, lon: string): string {
   const product = overlay === 'radar' ? 'radar' : 'ecmwf'
   const q = new URLSearchParams({
@@ -717,12 +714,12 @@ function windyEmbedUrl(overlay: WindyLayer, lat: string, lon: string): string {
 }
 
 function WindyMapCard(props: {
-  latitude: number
-  longitude: number
-  usingCurrentLocation: boolean
+  latitude: number | null
+  longitude: number | null
+  hasActiveLocation: boolean
   placeLabel: string | null
 }) {
-  const { latitude, longitude, usingCurrentLocation, placeLabel } = props
+  const { latitude, longitude, hasActiveLocation, placeLabel } = props
   const [layer, setLayer] = useState<WindyLayer>('radar')
   const layers: { id: WindyLayer; label: string }[] = [
     { id: 'radar', label: 'RADAR' },
@@ -730,9 +727,11 @@ function WindyMapCard(props: {
     { id: 'rain', label: 'RAIN' },
   ]
 
-  const latStr = usingCurrentLocation ? latitude.toFixed(4) : VB_WINDY_LAT
-  const lonStr = usingCurrentLocation ? longitude.toFixed(4) : VB_WINDY_LON
-  const locationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
+  const locationLabel = activePlaceLabel(hasActiveLocation, placeLabel)
+  const canEmbed =
+    hasActiveLocation && latitude != null && longitude != null
+  const latStr = canEmbed ? latitude.toFixed(4) : ''
+  const lonStr = canEmbed ? longitude.toFixed(4) : ''
 
   return (
     <section className="card map-placeholder" aria-label="Map area">
@@ -751,6 +750,7 @@ function WindyMapCard(props: {
                 className={layer === item.id ? 'is-active' : undefined}
                 aria-pressed={layer === item.id}
                 onClick={() => setLayer(item.id)}
+                disabled={!canEmbed}
               >
                 {item.label}
               </button>
@@ -759,15 +759,23 @@ function WindyMapCard(props: {
         </div>
         <p className="map-placeholder__loc">{locationLabel}</p>
       </div>
-      <div className="map-placeholder__frame map-placeholder__frame--live">
-        <iframe
-          key={`${latStr},${lonStr}`}
-          className="map-placeholder__iframe"
-          title={`Windy ${layer} map of ${locationLabel}`}
-          src={windyEmbedUrl(layer, latStr, lonStr)}
-          loading="lazy"
-        />
-      </div>
+      {canEmbed ? (
+        <div className="map-placeholder__frame map-placeholder__frame--live">
+          <iframe
+            key={`${latStr},${lonStr},${layer}`}
+            className="map-placeholder__iframe"
+            title={`Windy ${layer} map of ${locationLabel}`}
+            src={windyEmbedUrl(layer, latStr, lonStr)}
+            loading="lazy"
+          />
+        </div>
+      ) : (
+        <div className="map-placeholder__frame map-placeholder__frame--live map-placeholder__frame--needs-loc">
+          <p className="map-placeholder__needs-loc">
+            Use your location to load the local map.
+          </p>
+        </div>
+      )}
     </section>
   )
 }
@@ -781,12 +789,12 @@ function QuakesCard(props: {
   items: UsgsFeature[]
   errorMessage: string
   fetchedAt: Date | null
-  usingCurrentLocation: boolean
+  hasActiveLocation: boolean
   placeLabel: string | null
 }) {
-  const { phase, items, errorMessage, fetchedAt, usingCurrentLocation, placeLabel } = props
+  const { phase, items, errorMessage, fetchedAt, hasActiveLocation, placeLabel } = props
   const shown = items.slice(0, 3)
-  const locationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
+  const locationLabel = activePlaceLabel(hasActiveLocation, placeLabel)
   const radiusPhrase = quakeRadiusPhrase(locationLabel)
 
   let badge: { label: string; style: React.CSSProperties }
@@ -839,23 +847,29 @@ function QuakesCard(props: {
         <span style={badge.style}>{badge.label}</span>
       </div>
 
-      {phase === 'loading' && (
+      {phase === 'loading' && hasActiveLocation && (
         <p className="panel__body">Loading recent quakes from USGS…</p>
       )}
 
-      {phase === 'error' && (
+      {phase === 'error' && hasActiveLocation && (
         <p className="panel__body">
           Could not reach USGS right now ({errorMessage}). Try refreshing in a bit.
         </p>
       )}
 
-      {phase === 'ready' && shown.length === 0 && (
+      {!hasActiveLocation && (
+        <p className="panel__body">
+          Use your location to load local earthquake conditions.
+        </p>
+      )}
+
+      {hasActiveLocation && phase === 'ready' && shown.length === 0 && (
         <p className="panel__body">
           No earthquakes M2.5+ {radiusPhrase}.
         </p>
       )}
 
-      {phase === 'ready' && shown.length > 0 && (
+      {hasActiveLocation && phase === 'ready' && shown.length > 0 && (
         <div className="panel__body">
           <p style={{ margin: 0 }}>
             Latest from USGS ({radiusPhrase}, M2.5+):
@@ -890,13 +904,13 @@ function NwsAlertsCard(props: {
   alerts: NwsAlertFeature[]
   errorMessage: string
   fetchedAt: Date | null
-  usingCurrentLocation: boolean
+  hasActiveLocation: boolean
   placeLabel: string | null
 }) {
-  const { phase, alerts, errorMessage, fetchedAt, usingCurrentLocation, placeLabel } =
+  const { phase, alerts, errorMessage, fetchedAt, hasActiveLocation, placeLabel } =
     props
   const shown = alerts.slice(0, 5)
-  const locationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
+  const locationLabel = activePlaceLabel(hasActiveLocation, placeLabel)
 
   let badge: { label: string; style: React.CSSProperties }
   if (phase === 'loading') {
@@ -948,25 +962,31 @@ function NwsAlertsCard(props: {
         <span style={badge.style}>{badge.label}</span>
       </div>
 
-      {phase === 'loading' && (
+      {phase === 'loading' && hasActiveLocation && (
         <p className="panel__body">Loading active alerts from weather.gov…</p>
       )}
 
-      {phase === 'error' && (
+      {phase === 'error' && hasActiveLocation && (
         <p className="panel__body">
           Could not load alerts from weather.gov ({errorMessage}). Try refreshing in
           a little while.
         </p>
       )}
 
-      {phase === 'ready' && shown.length === 0 && (
+      {!hasActiveLocation && (
+        <p className="panel__body">
+          Use your location to load local weather alerts.
+        </p>
+      )}
+
+      {hasActiveLocation && phase === 'ready' && shown.length === 0 && (
         <p className="panel__body">
           No active weather alerts for {locationLabel} right now — a calm day on
           the official feed.
         </p>
       )}
 
-      {phase === 'ready' && shown.length > 0 && (
+      {hasActiveLocation && phase === 'ready' && shown.length > 0 && (
         <div className="panel__body">
           <p style={{ margin: 0 }}>
             Active alerts affecting {locationLabel} (NWS point lookup):
@@ -1067,9 +1087,9 @@ function HurricanesCard(props: {
   storms: NhcStorm[]
   errorMessage: string
   fetchedAt: Date | null
-  latitude: number
-  longitude: number
-  usingCurrentLocation: boolean
+  latitude: number | null
+  longitude: number | null
+  hasActiveLocation: boolean
   placeLabel: string | null
   weatherAlerts: NwsAlertFeature[]
   weatherAlertPhase: LivePhase
@@ -1082,20 +1102,23 @@ function HurricanesCard(props: {
     fetchedAt,
     latitude,
     longitude,
-    usingCurrentLocation,
+    hasActiveLocation,
     placeLabel,
     weatherAlerts,
     weatherAlertPhase,
     productsById,
   } = props
 
-  const location = useMemo(
-    () => ({ lat: latitude, lon: longitude }),
-    [latitude, longitude],
-  )
+  const location = useMemo(() => {
+    if (latitude == null || longitude == null) return null
+    return { lat: latitude, lon: longitude }
+  }, [latitude, longitude])
   const nwsWw =
-    weatherAlertPhase === 'ready' ? tropicalWatchWarningFromAlerts(weatherAlerts) : null
+    hasActiveLocation && weatherAlertPhase === 'ready'
+      ? tropicalWatchWarningFromAlerts(weatherAlerts)
+      : null
   const evals = useMemo(() => {
+    if (!location) return [] as HurricaneEval[]
     const rows: HurricaneEval[] = storms.map((storm, i) => {
       const id = storm.id ?? storm.name ?? `storm-${i}`
       return evaluateStorm(storm, location, productsById[id], nwsWw)
@@ -1106,9 +1129,16 @@ function HurricanesCard(props: {
 
   const primary = evals[0] ?? null
   const extras = evals.slice(1)
+  const fallbackPrimaryStorm = !hasActiveLocation && storms[0] ? storms[0] : null
   const relevanceLabel: HurricaneRelevance | 'Issue' | '···' =
-    phase === 'loading' ? '···' : phase === 'error' ? 'Issue' : (primary?.relevance ?? 'CLEAR')
-  const place = activePlaceLabel(usingCurrentLocation, placeLabel)
+    phase === 'loading'
+      ? '···'
+      : phase === 'error'
+        ? 'Issue'
+        : !hasActiveLocation
+          ? 'CLEAR'
+          : (primary?.relevance ?? 'CLEAR')
+  const place = activePlaceLabel(hasActiveLocation, placeLabel)
 
   return (
     <section className="card panel hurricanes-card">
@@ -1134,7 +1164,7 @@ function HurricanesCard(props: {
         </p>
       )}
 
-      {phase === 'ready' && !primary && (
+      {phase === 'ready' && storms.length === 0 && (
         <div className="panel__body">
           <p style={{ margin: 0 }}>No active Atlantic tropical systems right now.</p>
           <p style={metaMuted}>NHC Atlantic basin</p>
@@ -1254,6 +1284,36 @@ function HurricanesCard(props: {
         </div>
       )}
 
+      {phase === 'ready' && !primary && fallbackPrimaryStorm && (
+        <div className="panel__body">
+          <p style={{ margin: 0 }}>
+            <strong>{stormHeadline(fallbackPrimaryStorm)}</strong>
+          </p>
+          <p className="hurricane-relevance">
+            Use your location to assess local hurricane relevance.
+          </p>
+          {storms.length > 1 ? (
+            <div className="hurricane-others">
+              <p className="hurricane-others__label">OTHER ATLANTIC SYSTEMS</p>
+              {storms.slice(1).map((storm, i) => (
+                <div
+                  key={storm.id ?? `${storm.name}-${i}`}
+                  className="hurricane-others__item"
+                >
+                  <p className="hurricane-others__name">
+                    <strong>{stormHeadline(storm)}</strong>
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <p style={metaMuted}>
+            Based on official NHC forecast data — CoastCast does not predict storm
+            paths.
+          </p>
+        </div>
+      )}
+
       <p className="card-footer">{formatUpdatedFooter('NHC', fetchedAt)}</p>
     </section>
   )
@@ -1353,7 +1413,7 @@ function ForecastCard(props: {
   errorMessage: string
   fetchedAt: Date | null
   officialForecastUrl: string | null
-  usingCurrentLocation: boolean
+  hasActiveLocation: boolean
   placeLabel: string | null
 }) {
   const {
@@ -1362,10 +1422,10 @@ function ForecastCard(props: {
     errorMessage,
     fetchedAt,
     officialForecastUrl,
-    usingCurrentLocation,
+    hasActiveLocation,
     placeLabel,
   } = props
-  const locationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
+  const locationLabel = activePlaceLabel(hasActiveLocation, placeLabel)
   const forecastPageUrl =
     officialForecastUrl && isUsableHttpUrl(officialForecastUrl)
       ? officialForecastUrl
@@ -1424,24 +1484,30 @@ function ForecastCard(props: {
         <span style={badge.style}>{badge.label}</span>
       </div>
 
-      {phase === 'loading' && (
+      {phase === 'loading' && hasActiveLocation && (
         <p className="panel__body">Loading 3-day forecast for {locationLabel}…</p>
       )}
 
-      {phase === 'error' && (
+      {phase === 'error' && hasActiveLocation && (
         <p className="panel__body">
           Could not load the NWS forecast for {locationLabel}
           {errorMessage ? ` (${errorMessage})` : ''}.
         </p>
       )}
 
-      {phase === 'ready' && days.length === 0 && (
+      {!hasActiveLocation && (
+        <p className="panel__body">
+          Use your location to load the local forecast.
+        </p>
+      )}
+
+      {hasActiveLocation && phase === 'ready' && days.length === 0 && (
         <p className="panel__body">
           No daytime forecast periods available for {locationLabel} right now.
         </p>
       )}
 
-      {phase === 'ready' && days.length > 0 && (
+      {hasActiveLocation && phase === 'ready' && days.length > 0 && (
         <div className="panel__body forecast">
           {days.map((day, i) => (
             <div key={`${day.dayLabel}-${i}`} className="forecast__day">
@@ -1490,7 +1556,7 @@ function SkywatchCard(props: {
   nextEvent: NasaSkyEvent | null
   errorMessage: string
   fetchedAt: Date | null
-  usingCurrentLocation: boolean
+  hasActiveLocation: boolean
   placeLabel: string | null
 }) {
   const {
@@ -1499,10 +1565,10 @@ function SkywatchCard(props: {
     nextEvent,
     errorMessage,
     fetchedAt,
-    usingCurrentLocation,
+    hasActiveLocation,
     placeLabel,
   } = props
-  const locationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
+  const locationLabel = activePlaceLabel(hasActiveLocation, placeLabel)
 
   let badge: { label: string; style: React.CSSProperties }
   if (phase === 'loading') {
@@ -1562,13 +1628,13 @@ function SkywatchCard(props: {
         <span style={badge.style}>{badge.label}</span>
       </div>
 
-      {phase === 'loading' && (
+      {phase === 'loading' && hasActiveLocation && (
         <p className="panel__body">
           Loading sun and moon times for {locationLabel} from USNO…
         </p>
       )}
 
-      {phase === 'error' && (
+      {phase === 'error' && hasActiveLocation && (
         <p className="panel__body">
           Could not load sun and moon times for {locationLabel} from the U.S.
           Naval Observatory
@@ -1576,7 +1642,13 @@ function SkywatchCard(props: {
         </p>
       )}
 
-      {phase === 'ready' && (
+      {!hasActiveLocation && (
+        <p className="panel__body">
+          Use your location to load local sun and moon times.
+        </p>
+      )}
+
+      {hasActiveLocation && phase === 'ready' && (
         <div className="panel__body skywatch">
           <p className="skywatch__sunline">
             <span>
@@ -1687,6 +1759,7 @@ function buildScoreTickerItems(input: {
 
 function ScoreStatusTicker(props: {
   score: number | null
+  hasActiveLocation: boolean
   quakePhase: LivePhase
   nwsPhase: LivePhase
   nhcPhase: LivePhase
@@ -1694,17 +1767,32 @@ function ScoreStatusTicker(props: {
   alerts: NwsAlertFeature[]
   atlanticStorms: NhcStorm[]
 }) {
-  const { score, quakePhase, nwsPhase, nhcPhase, quakes, alerts, atlanticStorms } =
-    props
-  const headline = scoreStatusHeadline(score)
-  const items = buildScoreTickerItems({
+  const {
+    score,
+    hasActiveLocation,
     quakePhase,
     nwsPhase,
     nhcPhase,
     quakes,
     alerts,
     atlanticStorms,
-  })
+  } = props
+  const headline = hasActiveLocation
+    ? scoreStatusHeadline(score)
+    : {
+        label: 'LOCATION',
+        summary: 'Use your location to load local conditions',
+      }
+  const items = hasActiveLocation
+    ? buildScoreTickerItems({
+        quakePhase,
+        nwsPhase,
+        nhcPhase,
+        quakes,
+        alerts,
+        atlanticStorms,
+      })
+    : ['Use your location to load local conditions']
   const viewportRef = useRef<HTMLDivElement>(null)
   const measureRef = useRef<HTMLDivElement>(null)
   const [overflowing, setOverflowing] = useState(false)
@@ -1860,38 +1948,42 @@ function ShareControl() {
 }
 
 function LocationPrefControl(props: {
-  source: LocationSource
+  hasActiveLocation: boolean
   phase: GeoPhase
   placeLabel: string | null
+  notice: string | null
   onUseMyLocation: () => void
 }) {
-  const { source, phase, placeLabel, onUseMyLocation } = props
+  const { hasActiveLocation, phase, placeLabel, notice, onUseMyLocation } = props
   const locating = phase === 'locating'
-  const usingBrowser = source === 'browser'
   const failed =
-    phase === 'denied' || phase === 'unavailable' || phase === 'timeout'
+    !hasActiveLocation &&
+    (phase === 'denied' || phase === 'unavailable' || phase === 'timeout')
 
-  const viewingLine = placeLabel
-    ? `Viewing: ${placeLabel}`
-    : locating || usingBrowser
+  const viewingLine = hasActiveLocation
+    ? placeLabel
+      ? `Viewing: ${placeLabel}`
+      : 'Viewing: Current location'
+    : locating
       ? 'Viewing: Current location'
-      : `Viewing: ${DEFAULT_PLACE_LABEL}`
+      : 'Viewing: Location unavailable'
 
   const failMessage =
     phase === 'denied'
-      ? `Location permission denied — using ${DEFAULT_PLACE_LABEL}`
+      ? 'Location permission denied'
       : phase === 'timeout'
-        ? `Location timed out — using ${DEFAULT_PLACE_LABEL}`
+        ? 'Location timed out'
         : phase === 'unavailable'
-          ? `Location unavailable — using ${DEFAULT_PLACE_LABEL}`
+          ? 'Location unavailable'
           : null
 
   return (
     <div className="score-summary__loc">
       <span>{viewingLine}</span>
       {failed && failMessage ? <span>{failMessage}</span> : null}
+      {!failed && notice ? <span>{notice}</span> : null}
       <button type="button" onClick={onUseMyLocation} disabled={locating}>
-        Use my location
+        {failed ? 'Retry location' : 'Use my location'}
       </button>
     </div>
   )
@@ -1899,10 +1991,10 @@ function LocationPrefControl(props: {
 
 function LocationOnboardPrompt(props: {
   locating: boolean
-  onAllowLocation: () => void
-  onUseVirginiaBeach: () => void
+  onUseMyLocation: () => void
+  onDismiss: () => void
 }) {
-  const { locating, onAllowLocation, onUseVirginiaBeach } = props
+  const { locating, onUseMyLocation, onDismiss } = props
   return (
     <div className="loc-onboard" role="dialog" aria-modal="true" aria-labelledby="loc-onboard-title">
       <div className="loc-onboard__card">
@@ -1910,25 +2002,25 @@ function LocationOnboardPrompt(props: {
           Use your location?
         </h2>
         <p className="loc-onboard__body">
-          CoastCast can use your location for local alerts, radar, forecasts, and nearby
-          events.
+          CoastCast needs your location for local alerts, radar, forecasts, and nearby
+          events. No city is assumed until you share it.
         </p>
         <div className="loc-onboard__actions">
           <button
             type="button"
             className="loc-onboard__allow"
-            onClick={onAllowLocation}
+            onClick={onUseMyLocation}
             disabled={locating}
           >
-            {locating ? 'Locating...' : 'Allow location'}
+            {locating ? 'Locating...' : 'Use my location'}
           </button>
           <button
             type="button"
-            className="loc-onboard__vb"
-            onClick={onUseVirginiaBeach}
+            className="loc-onboard__dismiss"
+            onClick={onDismiss}
             disabled={locating}
           >
-            Use Virginia Beach
+            Not now
           </button>
         </div>
       </div>
@@ -1937,11 +2029,11 @@ function LocationOnboardPrompt(props: {
 }
 
 function App() {
-  const [quakePhase, setQuakePhase] = useState<LivePhase>('loading')
+  const [quakePhase, setQuakePhase] = useState<LivePhase>('ready')
   const [quakes, setQuakes] = useState<UsgsFeature[]>([])
   const [quakeError, setQuakeError] = useState('')
 
-  const [weatherAlertPhase, setWeatherAlertPhase] = useState<LivePhase>('loading')
+  const [weatherAlertPhase, setWeatherAlertPhase] = useState<LivePhase>('ready')
   const [weatherAlerts, setWeatherAlerts] = useState<NwsAlertFeature[]>([])
   const [weatherAlertError, setWeatherAlertError] = useState('')
   const [weatherAlertFetchedAt, setWeatherAlertFetchedAt] = useState<Date | null>(null)
@@ -1956,49 +2048,40 @@ function App() {
   const [quakeFetchedAt, setQuakeFetchedAt] = useState<Date | null>(null)
   const [nhcFetchedAt, setNhcFetchedAt] = useState<Date | null>(null)
 
-  const [forecastPhase, setForecastPhase] = useState<LivePhase>('loading')
+  const [forecastPhase, setForecastPhase] = useState<LivePhase>('ready')
   const [forecastDays, setForecastDays] = useState<ForecastDay[]>([])
   const [forecastHourly, setForecastHourly] = useState<NwsForecastPeriod[]>([])
   const [forecastError, setForecastError] = useState('')
   const [forecastFetchedAt, setForecastFetchedAt] = useState<Date | null>(null)
   const [forecastOfficialUrl, setForecastOfficialUrl] = useState<string | null>(null)
 
-  const [skywatchPhase, setSkywatchPhase] = useState<LivePhase>('loading')
+  const [skywatchPhase, setSkywatchPhase] = useState<LivePhase>('ready')
   const [skywatchSunMoon, setSkywatchSunMoon] = useState<SkywatchSunMoon | null>(null)
   const [skywatchEvent, setSkywatchEvent] = useState<NasaSkyEvent | null>(null)
   const [skywatchError, setSkywatchError] = useState('')
   const [skywatchFetchedAt, setSkywatchFetchedAt] = useState<Date | null>(null)
 
-  const [preferMyLocation, setPreferMyLocation] = useState(false)
-  const [coords, setCoords] = useState<GeoCoords>(VB_COORDS)
-  const [locationSource, setLocationSource] = useState<LocationSource>('virginia-beach')
+  const [coords, setCoords] = useState<GeoCoords | null>(null)
   const [geoPhase, setGeoPhase] = useState<GeoPhase>('idle')
   const [placeLabel, setPlaceLabel] = useState<string | null>(null)
+  const [locationNotice, setLocationNotice] = useState<string | null>(null)
   const [showLocationOnboard, setShowLocationOnboard] = useState(
     shouldShowMobileLocationOnboard,
   )
   const geoSeq = useRef(0)
   const nwsLabelCtrl = useRef<AbortController | null>(null)
   const userInvokedGeo = useRef(false)
+  const coordsRef = useRef<GeoCoords | null>(null)
+  coordsRef.current = coords
 
-  const fallbackToVirginiaBeach = useCallback((phase: GeoPhase) => {
-    nwsLabelCtrl.current?.abort()
-    writeUseMyLocationPref(false)
-    setPreferMyLocation(false)
-    setCoords(VB_COORDS)
-    setLocationSource('virginia-beach')
-    setPlaceLabel(null)
-    setGeoPhase(phase)
-  }, [])
+  const hasActiveLocation = coords != null
 
   const applyBrowserPosition = useCallback(async (next: GeoCoords, seq: number) => {
     if (seq !== geoSeq.current) return
     writeUseMyLocationPref(true)
-    writeChoseVirginiaBeachPref(false)
-    setPreferMyLocation(true)
     setCoords(next)
-    setLocationSource('browser')
     setShowLocationOnboard(false)
+    setLocationNotice(null)
     setGeoPhase('ready')
     nwsLabelCtrl.current?.abort()
     const ctrl = new AbortController()
@@ -2014,44 +2097,50 @@ function App() {
     setPlaceLabel(label)
   }, [])
 
-  const failBrowserPosition = useCallback(
-    (err: unknown, seq: number) => {
-      if (seq !== geoSeq.current) return
-      if (err instanceof Error && err.name === 'AbortError') return
-      setShowLocationOnboard(false)
-      fallbackToVirginiaBeach(geoPhaseFromError(err))
-    },
-    [fallbackToVirginiaBeach],
-  )
-
-  const useVirginiaBeach = useCallback(() => {
-    geoSeq.current += 1
+  const failBrowserPosition = useCallback((err: unknown, seq: number) => {
+    if (seq !== geoSeq.current) return
+    if (err instanceof Error && err.name === 'AbortError') return
     setShowLocationOnboard(false)
-    fallbackToVirginiaBeach('idle')
-  }, [fallbackToVirginiaBeach])
+    const phase = geoPhaseFromError(err)
+    const msg =
+      phase === 'denied'
+        ? 'Location permission denied'
+        : phase === 'timeout'
+          ? 'Location timed out'
+          : 'Location unavailable'
+    if (coordsRef.current != null) {
+      // Keep last successful location/data; do not invent another city.
+      setGeoPhase('ready')
+      setLocationNotice(`${msg} — keeping last location`)
+      return
+    }
+    writeUseMyLocationPref(false)
+    setCoords(null)
+    setPlaceLabel(null)
+    setLocationNotice(null)
+    setGeoPhase(phase)
+  }, [])
 
   const useMyLocation = useCallback(() => {
     userInvokedGeo.current = true
     const seq = ++geoSeq.current
-    setPreferMyLocation(true)
+    setLocationNotice(null)
     setGeoPhase('locating')
-    setPlaceLabel(null)
+    if (coordsRef.current == null) setPlaceLabel(null)
     requestBrowserLocation()
       .then((next) => applyBrowserPosition(next, seq))
       .catch((err) => failBrowserPosition(err, seq))
   }, [applyBrowserPosition, failBrowserPosition])
 
-  const onboardAllowLocation = useCallback(() => {
+  const onboardUseMyLocation = useCallback(() => {
     writeLocationOnboardedPref(true)
-    writeChoseVirginiaBeachPref(false)
     useMyLocation()
   }, [useMyLocation])
 
-  const onboardUseVirginiaBeach = useCallback(() => {
+  const onboardDismiss = useCallback(() => {
     writeLocationOnboardedPref(true)
-    writeChoseVirginiaBeachPref(true)
-    useVirginiaBeach()
-  }, [useVirginiaBeach])
+    setShowLocationOnboard(false)
+  }, [])
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_LOC_MQ)
@@ -2079,9 +2168,8 @@ function App() {
       if (cancelled || userInvokedGeo.current) return
       if (perm === 'granted') {
         const seq = ++geoSeq.current
-        setPreferMyLocation(true)
         setGeoPhase('locating')
-        setPlaceLabel(null)
+        if (coordsRef.current == null) setPlaceLabel(null)
         try {
           const next = await requestBrowserLocation()
           await applyBrowserPosition(next, seq)
@@ -2090,11 +2178,9 @@ function App() {
         }
         return
       }
-      if (!isMobileLocationViewport()) return
-      nwsLabelCtrl.current?.abort()
-      setPreferMyLocation(false)
-      setCoords(VB_COORDS)
-      setLocationSource('virginia-beach')
+      if (coordsRef.current != null) return
+      writeUseMyLocationPref(false)
+      setCoords(null)
       setPlaceLabel(null)
       setGeoPhase(perm === 'denied' ? 'denied' : 'unavailable')
     })()
@@ -2104,14 +2190,16 @@ function App() {
   }, [applyBrowserPosition, failBrowserPosition])
 
   useEffect(() => {
-    if (preferMyLocation && geoPhase === 'locating') {
-      setQuakePhase('loading')
+    if (!coords) {
+      setQuakes([])
+      setQuakeFetchedAt(null)
+      setQuakeError('')
+      setQuakePhase('ready')
       return
     }
+    if (geoPhase === 'locating') return
 
-    const point =
-      locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
-    const url = usgsQuakesUrl(point.latitude, point.longitude)
+    const url = usgsQuakesUrl(coords.latitude, coords.longitude)
     const ctrl = new AbortController()
     setQuakePhase('loading')
     ;(async () => {
@@ -2137,23 +2225,19 @@ function App() {
       }
     })()
     return () => ctrl.abort()
-  }, [
-    preferMyLocation,
-    geoPhase,
-    locationSource,
-    coords.latitude,
-    coords.longitude,
-  ])
+  }, [geoPhase, coords?.latitude, coords?.longitude])
 
   useEffect(() => {
-    if (preferMyLocation && geoPhase === 'locating') {
-      setWeatherAlertPhase('loading')
+    if (!coords) {
+      setWeatherAlerts([])
+      setWeatherAlertFetchedAt(null)
+      setWeatherAlertError('')
+      setWeatherAlertPhase('ready')
       return
     }
+    if (geoPhase === 'locating') return
 
-    const point =
-      locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
-    const url = nwsActiveAlertsUrl(point.latitude, point.longitude)
+    const url = nwsActiveAlertsUrl(coords.latitude, coords.longitude)
     const ctrl = new AbortController()
     setWeatherAlertPhase('loading')
     ;(async () => {
@@ -2182,13 +2266,7 @@ function App() {
       }
     })()
     return () => ctrl.abort()
-  }, [
-    preferMyLocation,
-    geoPhase,
-    locationSource,
-    coords.latitude,
-    coords.longitude,
-  ])
+  }, [geoPhase, coords?.latitude, coords?.longitude])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -2256,15 +2334,18 @@ function App() {
   }, [nhcPhase, atlanticStormKey, atlanticStorms])
 
   useEffect(() => {
-    if (preferMyLocation && geoPhase === 'locating') {
-      setForecastPhase('loading')
-      setForecastOfficialUrl(null)
+    if (!coords) {
+      setForecastDays([])
       setForecastHourly([])
+      setForecastOfficialUrl(null)
+      setForecastError('')
+      setForecastFetchedAt(null)
+      setForecastPhase('ready')
       return
     }
+    if (geoPhase === 'locating') return
 
-    const point =
-      locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
+    const point = coords
     const ctrl = new AbortController()
     setForecastPhase('loading')
     ;(async () => {
@@ -2339,22 +2420,20 @@ function App() {
       }
     })()
     return () => ctrl.abort()
-  }, [
-    preferMyLocation,
-    geoPhase,
-    locationSource,
-    coords.latitude,
-    coords.longitude,
-  ])
+  }, [geoPhase, coords?.latitude, coords?.longitude])
 
   useEffect(() => {
-    if (preferMyLocation && geoPhase === 'locating') {
-      setSkywatchPhase('loading')
+    if (!coords) {
+      setSkywatchSunMoon(null)
+      setSkywatchEvent(null)
+      setSkywatchError('')
+      setSkywatchFetchedAt(null)
+      setSkywatchPhase('ready')
       return
     }
+    if (geoPhase === 'locating') return
 
-    const point =
-      locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
+    const point = coords
     const ctrl = new AbortController()
     setSkywatchPhase('loading')
     ;(async () => {
@@ -2369,17 +2448,19 @@ function App() {
         } catch {
           timeZone = null
         }
-        if (!timeZone && point.latitude === VB_LAT && point.longitude === VB_LON) {
-          timeZone = 'America/New_York'
+        if (!timeZone) {
+          timeZone = browserTimeZone()
         }
 
         const now = new Date()
         let localYmd: string
         let tzHours: number
         if (timeZone) {
+          // IANA path (NWS or browser): DST-aware via Intl.
           localYmd = localYmdInTimeZone(timeZone, now)
           tzHours = utcOffsetHours(timeZone, now)
         } else {
+          // Last resort only — crude fixed offset from longitude.
           tzHours = lonGuessOffsetHours(point.longitude)
           const shifted = new Date(now.getTime() + tzHours * 3_600_000)
           const y = shifted.getUTCFullYear()
@@ -2419,32 +2500,35 @@ function App() {
       }
     })()
     return () => ctrl.abort()
-  }, [
-    preferMyLocation,
-    geoPhase,
-    locationSource,
-    coords.latitude,
-    coords.longitude,
-  ])
+  }, [geoPhase, coords?.latitude, coords?.longitude])
 
-  const usingCurrentLocation =
-    locationSource === 'browser' && geoPhase === 'ready'
-  const activeLocationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
-  const scorePoint =
-    locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
-  const score = computeCoastCastScore({
-    quakePhase,
-    nwsPhase: weatherAlertPhase,
-    nhcPhase,
-    forecastPhase,
-    quakes,
-    alerts: weatherAlerts,
-    hourly: forecastHourly,
-    atlanticStorms,
-    productsById: nhcProductsById,
-    location: { lat: scorePoint.latitude, lon: scorePoint.longitude },
-    locationName: activeLocationLabel,
-  })
+  const activeLocationLabel = activePlaceLabel(hasActiveLocation, placeLabel)
+  const score = hasActiveLocation
+    ? computeCoastCastScore({
+        quakePhase,
+        nwsPhase: weatherAlertPhase,
+        nhcPhase,
+        forecastPhase,
+        quakes,
+        alerts: weatherAlerts,
+        hourly: forecastHourly,
+        atlanticStorms,
+        productsById: nhcProductsById,
+        location: { lat: coords!.latitude, lon: coords!.longitude },
+        locationName: activeLocationLabel,
+      })
+    : {
+        score: null as number | null,
+        status: 'LOCATION',
+        summary: 'Use your location to load local conditions',
+        blurb: 'Use your location to load local conditions.',
+        sources: {
+          nwsAlertScore: 0,
+          forecastScore: 0,
+          hurricaneScore: 0,
+          quakeScore: 0,
+        },
+      }
 
   return (
     <div className="app">
@@ -2464,9 +2548,10 @@ function App() {
                   </div>
                   <p className="score-summary__place">Local Area Weather Conditions</p>
                   <LocationPrefControl
-                    source={locationSource}
+                    hasActiveLocation={hasActiveLocation}
                     phase={geoPhase}
                     placeLabel={placeLabel}
+                    notice={locationNotice}
                     onUseMyLocation={useMyLocation}
                   />
                 </div>
@@ -2476,11 +2561,14 @@ function App() {
                       {score.score == null ? '…' : score.score}
                     </span>
                   </div>
-                  <p className="score-summary__status">Status · {score.status}</p>
+                  <p className="score-summary__status">
+                    Status · {hasActiveLocation ? score.status : 'Location required'}
+                  </p>
                 </div>
               </div>
               <ScoreStatusTicker
                 score={score.score}
+                hasActiveLocation={hasActiveLocation}
                 quakePhase={quakePhase}
                 nwsPhase={weatherAlertPhase}
                 nhcPhase={nhcPhase}
@@ -2494,15 +2582,15 @@ function App() {
                 alerts={weatherAlerts}
                 errorMessage={weatherAlertError}
                 fetchedAt={weatherAlertFetchedAt}
-                usingCurrentLocation={usingCurrentLocation}
+                hasActiveLocation={hasActiveLocation}
                 placeLabel={placeLabel}
               />
             </div>
 
             <WindyMapCard
-              latitude={coords.latitude}
-              longitude={coords.longitude}
-              usingCurrentLocation={usingCurrentLocation}
+              latitude={coords?.latitude ?? null}
+              longitude={coords?.longitude ?? null}
+              hasActiveLocation={hasActiveLocation}
               placeLabel={placeLabel}
             />
           </div>
@@ -2513,9 +2601,9 @@ function App() {
               storms={atlanticStorms}
               errorMessage={nhcError}
               fetchedAt={nhcFetchedAt}
-              latitude={coords.latitude}
-              longitude={coords.longitude}
-              usingCurrentLocation={usingCurrentLocation}
+              latitude={coords?.latitude ?? null}
+              longitude={coords?.longitude ?? null}
+              hasActiveLocation={hasActiveLocation}
               placeLabel={placeLabel}
               weatherAlerts={weatherAlerts}
               weatherAlertPhase={weatherAlertPhase}
@@ -2527,7 +2615,7 @@ function App() {
               items={quakes}
               errorMessage={quakeError}
               fetchedAt={quakeFetchedAt}
-              usingCurrentLocation={usingCurrentLocation}
+              hasActiveLocation={hasActiveLocation}
               placeLabel={placeLabel}
             />
 
@@ -2537,7 +2625,7 @@ function App() {
               nextEvent={skywatchEvent}
               errorMessage={skywatchError}
               fetchedAt={skywatchFetchedAt}
-              usingCurrentLocation={usingCurrentLocation}
+              hasActiveLocation={hasActiveLocation}
               placeLabel={placeLabel}
             />
 
@@ -2547,7 +2635,7 @@ function App() {
               errorMessage={forecastError}
               fetchedAt={forecastFetchedAt}
               officialForecastUrl={forecastOfficialUrl}
-              usingCurrentLocation={usingCurrentLocation}
+              hasActiveLocation={hasActiveLocation}
               placeLabel={placeLabel}
             />
           </aside>
@@ -2559,8 +2647,8 @@ function App() {
       {showLocationOnboard ? (
         <LocationOnboardPrompt
           locating={geoPhase === 'locating'}
-          onAllowLocation={onboardAllowLocation}
-          onUseVirginiaBeach={onboardUseVirginiaBeach}
+          onUseMyLocation={onboardUseMyLocation}
+          onDismiss={onboardDismiss}
         />
       ) : null}
     </div>

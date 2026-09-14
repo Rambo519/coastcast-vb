@@ -175,11 +175,11 @@ export function formatMiles(n: number | null): string {
 }
 
 export function relevancePlacePhrase(
-  usingCurrentLocation: boolean,
+  hasActiveLocation: boolean,
   placeLabel: string | null,
 ): string {
-  if (usingCurrentLocation) return placeLabel ?? 'Current location'
-  return 'Virginia Beach, VA'
+  if (!hasActiveLocation) return 'Location unavailable'
+  return placeLabel ?? 'Current location'
 }
 
 function isAllowedNhcPath(pathname: string): boolean {
