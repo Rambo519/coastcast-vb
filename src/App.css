@@ -529,6 +529,7 @@
 
 .score-summary__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   column-gap: 0.55rem;
@@ -646,6 +647,7 @@
 
   .dashboard__left .score-summary__intro {
     min-width: 0;
+    max-width: 100%;
     padding-left: 0.62rem;
     overflow: visible;
   }
@@ -671,8 +673,8 @@
     min-width: 112px;
     max-width: 112px;
     padding: 0;
-    justify-self: stretch;
-    align-self: center;
+    justify-self: end;
+    align-self: start;
     align-items: center;
     box-sizing: border-box;
   }
@@ -737,24 +739,27 @@
 }
 
 @media (max-width: 380px) {
+  /* Keep a stable two-column header; wrap left text instead of dropping the score. */
   .dashboard__left .score-summary__row {
-    grid-template-columns: 1fr;
-    justify-items: stretch;
-    row-gap: 0.65rem;
+    grid-template-columns: minmax(0, 1fr) 104px;
+    column-gap: 0.45rem;
+    row-gap: 0;
     align-items: start;
+    justify-items: stretch;
   }
 
   .dashboard__left .score-summary__intro {
-    width: 100%;
+    width: auto;
     max-width: 100%;
+    min-width: 0;
   }
 
   .dashboard__left .score-summary__metric {
     justify-self: end;
-    width: 112px;
-    min-width: 112px;
-    max-width: 112px;
-    margin-left: auto;
+    width: 104px;
+    min-width: 104px;
+    max-width: 104px;
+    margin-left: 0;
     align-self: start;
   }
 
@@ -763,6 +768,14 @@
     width: 100%;
     margin-left: 0;
     align-self: center;
+  }
+
+  .score-summary__head {
+    column-gap: 0.28rem;
+  }
+
+  .score-summary__share {
+    font-size: 0.625rem;
   }
 }
 

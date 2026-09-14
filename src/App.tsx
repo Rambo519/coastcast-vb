@@ -25,7 +25,7 @@ const VB_LAT = 36.8529
 const VB_LON = -75.978
 
 /** Bump this when shipping a new CoastCast release. */
-const APP_VERSION = '0.9.1'
+const APP_VERSION = '0.9.2'
 
 const USE_MY_LOCATION_PREF_KEY = 'coastcast-use-my-location'
 const CHOSE_VB_PREF_KEY = 'coastcast-chose-virginia-beach'
