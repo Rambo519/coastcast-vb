@@ -6,7 +6,6 @@ import {
   formatMiles,
   isAtlanticNhcStorm,
   loadStormProducts,
-  relevancePlacePhrase,
   stormHeadline,
   tropicalWatchWarningFromAlerts,
   type HurricaneEval,
@@ -25,7 +24,22 @@ const VB_LAT = 36.8529
 const VB_LON = -75.978
 
 /** Bump this when shipping a new CoastCast release. */
-const APP_VERSION = '0.9.3'
+const APP_VERSION = '0.9.4'
+
+/** User-facing default when CoastCast is on its internal VB fallback coordinates. */
+const DEFAULT_PLACE_LABEL = 'Virginia Beach, VA'
+
+/**
+ * Single shared active-location display label for all cards.
+ * GPS + unresolved City/ST → "Current location" (never temporary Virginia Beach).
+ */
+function activePlaceLabel(
+  usingCurrentLocation: boolean,
+  placeLabel: string | null,
+): string {
+  if (usingCurrentLocation) return placeLabel ?? 'Current location'
+  return DEFAULT_PLACE_LABEL
+}
 
 const USE_MY_LOCATION_PREF_KEY = 'coastcast-use-my-location'
 const CHOSE_VB_PREF_KEY = 'coastcast-chose-virginia-beach'
@@ -718,9 +732,7 @@ function WindyMapCard(props: {
 
   const latStr = usingCurrentLocation ? latitude.toFixed(4) : VB_WINDY_LAT
   const lonStr = usingCurrentLocation ? longitude.toFixed(4) : VB_WINDY_LON
-  const locationLabel = usingCurrentLocation
-    ? (placeLabel ?? 'Current location')
-    : 'Virginia Beach / Norfolk'
+  const locationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
 
   return (
     <section className="card map-placeholder" aria-label="Map area">
@@ -760,10 +772,8 @@ function WindyMapCard(props: {
   )
 }
 
-function quakeRadiusPhrase(usingCurrentLocation: boolean, placeLabel: string | null): string {
-  if (!usingCurrentLocation) return 'within 500 miles of Virginia Beach'
-  if (placeLabel) return `within 500 miles of ${placeLabel}`
-  return 'within 500 miles of your location'
+function quakeRadiusPhrase(locationLabel: string): string {
+  return `within 500 miles of ${locationLabel}`
 }
 
 function QuakesCard(props: {
@@ -776,7 +786,8 @@ function QuakesCard(props: {
 }) {
   const { phase, items, errorMessage, fetchedAt, usingCurrentLocation, placeLabel } = props
   const shown = items.slice(0, 3)
-  const radiusPhrase = quakeRadiusPhrase(usingCurrentLocation, placeLabel)
+  const locationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
+  const radiusPhrase = quakeRadiusPhrase(locationLabel)
 
   let badge: { label: string; style: React.CSSProperties }
   if (phase === 'loading') {
@@ -840,8 +851,7 @@ function QuakesCard(props: {
 
       {phase === 'ready' && shown.length === 0 && (
         <p className="panel__body">
-          No recent earthquakes showed up {radiusPhrase} — the
-          coast is seismically quiet for now.
+          No earthquakes M2.5+ {radiusPhrase}.
         </p>
       )}
 
@@ -880,9 +890,13 @@ function NwsAlertsCard(props: {
   alerts: NwsAlertFeature[]
   errorMessage: string
   fetchedAt: Date | null
+  usingCurrentLocation: boolean
+  placeLabel: string | null
 }) {
-  const { phase, alerts, errorMessage, fetchedAt } = props
+  const { phase, alerts, errorMessage, fetchedAt, usingCurrentLocation, placeLabel } =
+    props
   const shown = alerts.slice(0, 5)
+  const locationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
 
   let badge: { label: string; style: React.CSSProperties }
   if (phase === 'loading') {
@@ -947,15 +961,15 @@ function NwsAlertsCard(props: {
 
       {phase === 'ready' && shown.length === 0 && (
         <p className="panel__body">
-          No active weather alerts for the Virginia Beach point right now — a
-          calm day on the official feed.
+          No active weather alerts for {locationLabel} right now — a calm day on
+          the official feed.
         </p>
       )}
 
       {phase === 'ready' && shown.length > 0 && (
         <div className="panel__body">
           <p style={{ margin: 0 }}>
-            Active alerts affecting Virginia Beach, VA (NWS point lookup):
+            Active alerts affecting {locationLabel} (NWS point lookup):
           </p>
           {shown.map((f, i) => {
             const p = f.properties!
@@ -1094,7 +1108,7 @@ function HurricanesCard(props: {
   const extras = evals.slice(1)
   const relevanceLabel: HurricaneRelevance | 'Issue' | '···' =
     phase === 'loading' ? '···' : phase === 'error' ? 'Issue' : (primary?.relevance ?? 'CLEAR')
-  const place = relevancePlacePhrase(usingCurrentLocation, placeLabel)
+  const place = activePlaceLabel(usingCurrentLocation, placeLabel)
 
   return (
     <section className="card panel hurricanes-card">
@@ -1339,8 +1353,19 @@ function ForecastCard(props: {
   errorMessage: string
   fetchedAt: Date | null
   officialForecastUrl: string | null
+  usingCurrentLocation: boolean
+  placeLabel: string | null
 }) {
-  const { phase, days, errorMessage, fetchedAt, officialForecastUrl } = props
+  const {
+    phase,
+    days,
+    errorMessage,
+    fetchedAt,
+    officialForecastUrl,
+    usingCurrentLocation,
+    placeLabel,
+  } = props
+  const locationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
   const forecastPageUrl =
     officialForecastUrl && isUsableHttpUrl(officialForecastUrl)
       ? officialForecastUrl
@@ -1390,25 +1415,30 @@ function ForecastCard(props: {
   }
 
   return (
-    <section className="card panel panel--nature">
+    <section
+      className="card panel panel--nature"
+      aria-label={`3-day forecast for ${locationLabel}`}
+    >
       <div style={panelHead}>
         <h2 className="card__title">3-Day Forecast</h2>
         <span style={badge.style}>{badge.label}</span>
       </div>
 
       {phase === 'loading' && (
-        <p className="panel__body">Loading 3-day forecast…</p>
+        <p className="panel__body">Loading 3-day forecast for {locationLabel}…</p>
       )}
 
       {phase === 'error' && (
         <p className="panel__body">
-          Could not load the NWS forecast
+          Could not load the NWS forecast for {locationLabel}
           {errorMessage ? ` (${errorMessage})` : ''}.
         </p>
       )}
 
       {phase === 'ready' && days.length === 0 && (
-        <p className="panel__body">No daytime forecast periods available right now.</p>
+        <p className="panel__body">
+          No daytime forecast periods available for {locationLabel} right now.
+        </p>
       )}
 
       {phase === 'ready' && days.length > 0 && (
@@ -1460,8 +1490,19 @@ function SkywatchCard(props: {
   nextEvent: NasaSkyEvent | null
   errorMessage: string
   fetchedAt: Date | null
+  usingCurrentLocation: boolean
+  placeLabel: string | null
 }) {
-  const { phase, sunMoon, nextEvent, errorMessage, fetchedAt } = props
+  const {
+    phase,
+    sunMoon,
+    nextEvent,
+    errorMessage,
+    fetchedAt,
+    usingCurrentLocation,
+    placeLabel,
+  } = props
+  const locationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
 
   let badge: { label: string; style: React.CSSProperties }
   if (phase === 'loading') {
@@ -1512,19 +1553,25 @@ function SkywatchCard(props: {
   const eventNote = nextEvent?.note ?? 'Official monthly skywatching highlights from NASA.'
 
   return (
-    <section className="card panel skywatch-card">
+    <section
+      className="card panel skywatch-card"
+      aria-label={`Skywatch for ${locationLabel}`}
+    >
       <div style={panelHead}>
         <h2 className="card__title">Skywatch</h2>
         <span style={badge.style}>{badge.label}</span>
       </div>
 
       {phase === 'loading' && (
-        <p className="panel__body">Loading sun and moon times from USNO…</p>
+        <p className="panel__body">
+          Loading sun and moon times for {locationLabel} from USNO…
+        </p>
       )}
 
       {phase === 'error' && (
         <p className="panel__body">
-          Could not load sun and moon times from the U.S. Naval Observatory
+          Could not load sun and moon times for {locationLabel} from the U.S.
+          Naval Observatory
           {errorMessage ? ` (${errorMessage})` : ''}.
         </p>
       )}
@@ -1828,15 +1875,15 @@ function LocationPrefControl(props: {
     ? `Viewing: ${placeLabel}`
     : locating || usingBrowser
       ? 'Viewing: Current location'
-      : 'Viewing: Virginia Beach, VA'
+      : `Viewing: ${DEFAULT_PLACE_LABEL}`
 
   const failMessage =
     phase === 'denied'
-      ? 'Location permission denied — using Virginia Beach'
+      ? `Location permission denied — using ${DEFAULT_PLACE_LABEL}`
       : phase === 'timeout'
-        ? 'Location timed out — using Virginia Beach'
+        ? `Location timed out — using ${DEFAULT_PLACE_LABEL}`
         : phase === 'unavailable'
-          ? 'Location unavailable — using Virginia Beach'
+          ? `Location unavailable — using ${DEFAULT_PLACE_LABEL}`
           : null
 
   return (
@@ -2382,9 +2429,7 @@ function App() {
 
   const usingCurrentLocation =
     locationSource === 'browser' && geoPhase === 'ready'
-  const scoreLocationName = usingCurrentLocation
-    ? (placeLabel ?? 'your location')
-    : 'Virginia Beach'
+  const activeLocationLabel = activePlaceLabel(usingCurrentLocation, placeLabel)
   const scorePoint =
     locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
   const score = computeCoastCastScore({
@@ -2398,7 +2443,7 @@ function App() {
     atlanticStorms,
     productsById: nhcProductsById,
     location: { lat: scorePoint.latitude, lon: scorePoint.longitude },
-    locationName: scoreLocationName,
+    locationName: activeLocationLabel,
   })
 
   return (
@@ -2407,7 +2452,7 @@ function App() {
         <div className="dashboard">
           <div className="dashboard__left">
             <div className="dashboard__top">
-            <section className="card score-summary" aria-label={`${scoreLocationName} relevance score`}>
+            <section className="card score-summary" aria-label={`${activeLocationLabel} relevance score`}>
               <div className="score-summary__row">
                 <div className="score-summary__intro">
                   <div className="score-summary__head">
@@ -2449,6 +2494,8 @@ function App() {
                 alerts={weatherAlerts}
                 errorMessage={weatherAlertError}
                 fetchedAt={weatherAlertFetchedAt}
+                usingCurrentLocation={usingCurrentLocation}
+                placeLabel={placeLabel}
               />
             </div>
 
@@ -2490,6 +2537,8 @@ function App() {
               nextEvent={skywatchEvent}
               errorMessage={skywatchError}
               fetchedAt={skywatchFetchedAt}
+              usingCurrentLocation={usingCurrentLocation}
+              placeLabel={placeLabel}
             />
 
             <ForecastCard
@@ -2498,6 +2547,8 @@ function App() {
               errorMessage={forecastError}
               fetchedAt={forecastFetchedAt}
               officialForecastUrl={forecastOfficialUrl}
+              usingCurrentLocation={usingCurrentLocation}
+              placeLabel={placeLabel}
             />
           </aside>
         </div>

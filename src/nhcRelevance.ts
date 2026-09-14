@@ -178,7 +178,7 @@ export function relevancePlacePhrase(
   usingCurrentLocation: boolean,
   placeLabel: string | null,
 ): string {
-  if (usingCurrentLocation) return placeLabel ?? 'your location'
+  if (usingCurrentLocation) return placeLabel ?? 'Current location'
   return 'Virginia Beach, VA'
 }
 
