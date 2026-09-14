@@ -979,7 +979,7 @@
   border-radius: 2px;
   box-shadow:
     inset 3px 0 0 var(--accent-hurricane),
-    -6px 0 18px rgba(56, 189, 248, 0.14);
+    -6px 0 18px rgba(253, 61, 181, 0.16);
 }
 
 .panels > .panel:nth-child(2) > div:first-child {
@@ -1152,20 +1152,20 @@
 
 .hurricanes-card a {
   text-decoration: none;
-  border-bottom: 1px solid rgba(56, 189, 248, 0.3);
+  border-bottom: 1px solid rgba(253, 61, 181, 0.32);
 }
 
 .hurricanes-card a:hover {
-  border-bottom-color: rgba(56, 189, 248, 0.55);
+  border-bottom-color: rgba(253, 61, 181, 0.58);
 }
 
 .hurricanes-card .hurricane-name-link {
   color: inherit;
-  border-bottom-color: rgba(56, 189, 248, 0.32);
+  border-bottom-color: rgba(253, 61, 181, 0.34);
 }
 
 .hurricanes-card .hurricane-name-link:hover {
-  border-bottom-color: rgba(56, 189, 248, 0.7);
+  border-bottom-color: rgba(253, 61, 181, 0.72);
 }
 
 .hurricanes-card .nhc-forecast-ext {
@@ -1281,9 +1281,29 @@
 }
 
 .panels > .panel:nth-child(1) > div:first-child > span {
-  background: #140f1c !important;
+  /* Category accent for calm/monitor badges; severity tones stay on HIGH/ELEVATED/error via inline styles */
+  background: #1a0f16 !important;
   border: 1px solid var(--accent-hurricane) !important;
   color: var(--accent-hurricane) !important;
+}
+
+.panels > .panel:nth-child(1) > div:first-child > span[data-hurricane-tone='elevated'],
+.panels > .panel:nth-child(1) > div:first-child > span[data-hurricane-tone='high'] {
+  background: #1a1408 !important;
+  border-color: rgba(240, 190, 110, 0.55) !important;
+  color: rgba(255, 220, 160, 0.95) !important;
+}
+
+.panels > .panel:nth-child(1) > div:first-child > span[data-hurricane-tone='error'] {
+  background: #1a0c0c !important;
+  border-color: rgba(240, 140, 140, 0.5) !important;
+  color: rgba(255, 190, 190, 0.95) !important;
+}
+
+.panels > .panel:nth-child(1) > div:first-child > span[data-hurricane-tone='loading'] {
+  background: rgba(200, 200, 210, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: rgba(200, 210, 225, 0.75) !important;
 }
 
 .panels > .panel:nth-child(2) > div:first-child > span {

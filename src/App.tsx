@@ -25,7 +25,7 @@ const VB_LAT = 36.8529
 const VB_LON = -75.978
 
 /** Bump this when shipping a new CoastCast release. */
-const APP_VERSION = '0.9.2'
+const APP_VERSION = '0.9.3'
 
 const USE_MY_LOCATION_PREF_KEY = 'coastcast-use-my-location'
 const CHOSE_VB_PREF_KEY = 'coastcast-chose-virginia-beach'
@@ -1031,10 +1031,21 @@ function hurricaneBadge(label: string, phase: LivePhase): React.CSSProperties {
   }
   return {
     ...badgeBase,
-    background: 'rgba(120, 190, 255, 0.1)',
-    borderColor: 'rgba(120, 190, 255, 0.3)',
-    color: 'rgba(170, 215, 255, 0.95)',
+    background: 'rgba(253, 61, 181, 0.1)',
+    borderColor: 'rgba(253, 61, 181, 0.35)',
+    color: 'rgba(255, 170, 220, 0.95)',
   }
+}
+
+function hurricaneBadgeTone(
+  label: string,
+  phase: LivePhase,
+): 'loading' | 'error' | 'high' | 'elevated' | 'accent' {
+  if (phase === 'loading') return 'loading'
+  if (phase === 'error') return 'error'
+  if (label === 'HIGH') return 'high'
+  if (label === 'ELEVATED') return 'elevated'
+  return 'accent'
 }
 
 function HurricanesCard(props: {
@@ -1089,7 +1100,12 @@ function HurricanesCard(props: {
     <section className="card panel hurricanes-card">
       <div style={panelHead}>
         <h2 className="card__title">Hurricanes</h2>
-        <span style={hurricaneBadge(relevanceLabel, phase)}>{relevanceLabel}</span>
+        <span
+          style={hurricaneBadge(relevanceLabel, phase)}
+          data-hurricane-tone={hurricaneBadgeTone(relevanceLabel, phase)}
+        >
+          {relevanceLabel}
+        </span>
       </div>
 
       {phase === 'loading' && (
