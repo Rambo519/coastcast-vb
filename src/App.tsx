@@ -19,6 +19,9 @@ import {
 const VB_LAT = 36.8529
 const VB_LON = -75.978
 
+/** Bump this when shipping a new CoastCast release. */
+const APP_VERSION = '0.9.0'
+
 const USE_MY_LOCATION_PREF_KEY = 'coastcast-use-my-location'
 const CHOSE_VB_PREF_KEY = 'coastcast-chose-virginia-beach'
 const LOCATION_ONBOARDED_PREF_KEY = 'coastcast-location-onboarded'
@@ -2636,6 +2639,9 @@ function App() {
           </aside>
         </div>
       </main>
+      <footer className="app-footer">
+        CoastCast · v{APP_VERSION} · Beta
+      </footer>
       {showLocationOnboard ? (
         <LocationOnboardPrompt
           locating={geoPhase === 'locating'}
