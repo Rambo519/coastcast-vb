@@ -15,12 +15,17 @@ import {
   type NhcStorm,
   type NhcStormProducts,
 } from './nhcRelevance'
+import {
+  computeCoastCastScore,
+  scoreToneClass,
+  statusFromThreatScore,
+} from './threatScore'
 
 const VB_LAT = 36.8529
 const VB_LON = -75.978
 
 /** Bump this when shipping a new CoastCast release. */
-const APP_VERSION = '0.9.0'
+const APP_VERSION = '0.9.1'
 
 const USE_MY_LOCATION_PREF_KEY = 'coastcast-use-my-location'
 const CHOSE_VB_PREF_KEY = 'coastcast-chose-virginia-beach'
@@ -79,6 +84,7 @@ type NwsForecastPeriod = {
   relativeHumidity?: NwsQuantity | null
   icon?: string | null
   shortForecast?: string | null
+  windSpeed?: string | null
 }
 
 type ForecastIconKind =
@@ -425,6 +431,7 @@ type NwsAlertFeature = {
     event?: string | null
     headline?: string | null
     areaDesc?: string | null
+    severity?: string | null
   } | null
 }
 
@@ -440,44 +447,6 @@ function nwsAlertOfficialUrl(f: NwsAlertFeature): string | null {
 }
 
 
-/**
- * NWS api.weather.gov does not ship marine zone text forecasts yet; this uses the
- * same official active-alerts feed as the NWS Alerts card (VB ocean point) and
- * keeps rows that look beach / surf / marine / coastal-flood related.
- */
-function isMarineCoastalHazardAlert(f: NwsAlertFeature): boolean {
-  const p = f.properties
-  if (!p) return false
-  const blob = `${p.event ?? ''} ${p.headline ?? ''} ${p.areaDesc ?? ''}`.toLowerCase()
-  if (blob.includes('winter storm') || blob.includes('blizzard') || blob.includes('ice storm')) {
-    return false
-  }
-  const needles = [
-    'rip current',
-    'beach hazards',
-    'beach hazard',
-    'coastal flood',
-    'lakeshore flood',
-    'high surf',
-    'heavy surf',
-    'small craft',
-    'gale',
-    'marine weather',
-    'hazardous seas',
-    'tsunami',
-    'hurricane local',
-    'storm surge',
-    'tropical storm warning',
-    'hurricane warning',
-    'extreme wind',
-  ]
-  return needles.some((n) => blob.includes(n))
-}
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n))
-}
-
 function maxQuakeMag(quakes: UsgsFeature[]): number | null {
   let max: number | null = null
   for (const f of quakes) {
@@ -486,141 +455,6 @@ function maxQuakeMag(quakes: UsgsFeature[]): number | null {
     if (max == null || m > max) max = m
   }
   return max
-}
-
-/** Stronger quakes add more points (USGS feed is already M2.5+). */
-function quakeStressPoints(quakes: UsgsFeature[]): number {
-  const max = maxQuakeMag(quakes)
-  if (max == null) return 0
-  return Math.round(clamp((max - 2.5) * 10, 0, 36))
-}
-
-/** More active alerts add more points (capped). */
-function nwsStressPoints(alerts: NwsAlertFeature[]): number {
-  return Math.min(44, alerts.length * 11)
-}
-
-/** Atlantic cyclones listed by NHC when that panel is ready; none / loading / error → 0. */
-function hurricaneStressPoints(nhcPhase: LivePhase, storms: NhcStorm[]): number {
-  if (nhcPhase !== 'ready') return 0
-  if (storms.length === 0) return 0
-  let pts = 0
-  for (const s of storms) {
-    const c = (s.classification ?? '').toUpperCase()
-    if (c === 'HU') pts += 14
-    else if (c === 'TS' || c === 'STS') pts += 10
-    else pts += 7
-  }
-  return Math.min(30, pts)
-}
-
-/** Same NWS feed as the Marine card: coastal / rip / surf / small craft–style alerts. */
-function marineStressPoints(nwsPhase: LivePhase, alerts: NwsAlertFeature[]): number {
-  if (nwsPhase !== 'ready') return 0
-  const n = alerts.filter(isMarineCoastalHazardAlert).length
-  if (n === 0) return 0
-  return Math.min(22, 6 + (n - 1) * 7)
-}
-
-function statusFromScore(score: number): 'Calm' | 'Guarded' | 'Elevated' | 'High' {
-  if (score <= 22) return 'Calm'
-  if (score <= 45) return 'Guarded'
-  if (score <= 68) return 'Elevated'
-  return 'High'
-}
-
-type ScoreResult = {
-  score: number | null
-  status: string
-  blurb: string
-}
-
-/** Display-only threat band for the score numeral. Does not change the formula. */
-function scoreToneClass(score: number | null): string {
-  if (score == null) return 'score-summary__metric--pending'
-  if (score <= 19) return 'score-summary__metric--t0'
-  if (score <= 39) return 'score-summary__metric--t1'
-  if (score <= 59) return 'score-summary__metric--t2'
-  if (score <= 79) return 'score-summary__metric--t3'
-  return 'score-summary__metric--t4'
-}
-
-/**
- * Live USGS quakes + NWS active-location alerts + NHC Atlantic list + marine-style
- * alert subset — 0–100 score, status label, short blurb. Forecast / Skywatch are not scored.
- */
-function computeVbScore(input: {
-  quakePhase: LivePhase
-  nwsPhase: LivePhase
-  nhcPhase: LivePhase
-  quakes: UsgsFeature[]
-  alerts: NwsAlertFeature[]
-  atlanticStorms: NhcStorm[]
-  locationName: string
-}): ScoreResult {
-  const { quakePhase, nwsPhase, nhcPhase, quakes, alerts, atlanticStorms, locationName } =
-    input
-
-  if (quakePhase === 'loading' || nwsPhase === 'loading') {
-    return {
-      score: null,
-      status: 'Loading',
-      blurb: 'Checking latest conditions…',
-    }
-  }
-
-  const qPts = quakePhase === 'ready' ? quakeStressPoints(quakes) : 0
-  const nPts = nwsPhase === 'ready' ? nwsStressPoints(alerts) : 0
-  const hPts = hurricaneStressPoints(nhcPhase, atlanticStorms)
-  const mPts = marineStressPoints(nwsPhase, alerts)
-
-  const raw = qPts + nPts + hPts + mPts
-  const score = clamp(Math.round(raw), 0, 100)
-  const status = statusFromScore(score)
-
-  const quakesQuiet = quakePhase === 'ready' && quakes.length === 0
-  const alertsClear = nwsPhase === 'ready' && alerts.length === 0
-  const atlanticClear = nhcPhase === 'ready' && atlanticStorms.length === 0
-
-  let blurb: string
-  if (quakesQuiet && alertsClear && atlanticClear) {
-    blurb =
-      'Quiet overall — no nearby quakes, no active weather alerts, and no Atlantic tropical systems.'
-  } else {
-    const bits: string[] = []
-    if (quakePhase === 'error') bits.push('earthquake data unavailable')
-    else if (quakes.length > 0) {
-      const m = maxQuakeMag(quakes)
-      bits.push(
-        m != null ? `strongest nearby quake about M ${m.toFixed(1)}` : 'nearby quake activity',
-      )
-    } else if (quakesQuiet) {
-      bits.push('no nearby quakes')
-    }
-
-    if (nwsPhase === 'error') bits.push('weather alerts unavailable')
-    else if (alerts.length > 0) {
-      bits.push(
-        `${alerts.length} active weather alert${alerts.length === 1 ? '' : 's'}`,
-      )
-    } else if (alertsClear) {
-      bits.push('no active weather alerts')
-    }
-
-    if (nhcPhase === 'loading') bits.push('checking tropical systems')
-    else if (nhcPhase === 'error') bits.push('tropical system data unavailable')
-    else if (atlanticStorms.length > 0) {
-      bits.push(
-        `${atlanticStorms.length} Atlantic tropical system${atlanticStorms.length === 1 ? '' : 's'}`,
-      )
-    } else if (atlanticClear) {
-      bits.push('no Atlantic tropical systems')
-    }
-
-    blurb = bits.length > 0 ? `${bits.join(', ')}.` : `Conditions around ${locationName}.`
-  }
-
-  return { score, status, blurb }
 }
 
 const metaMuted: React.CSSProperties = {
@@ -1214,6 +1048,7 @@ function HurricanesCard(props: {
   placeLabel: string | null
   weatherAlerts: NwsAlertFeature[]
   weatherAlertPhase: LivePhase
+  productsById: Record<string, NhcStormProducts>
 }) {
   const {
     phase,
@@ -1226,48 +1061,8 @@ function HurricanesCard(props: {
     placeLabel,
     weatherAlerts,
     weatherAlertPhase,
+    productsById,
   } = props
-
-  const [productsById, setProductsById] = useState<Record<string, NhcStormProducts>>({})
-  const stormKey = storms
-    .map((s) => {
-      const adv =
-        s.forecastAdvisory?.advNum ??
-        s.forecastTrack?.advNum ??
-        s.lastUpdate ??
-        ''
-      return `${s.id ?? s.name ?? ''}:${adv}`
-    })
-    .join('|')
-
-  useEffect(() => {
-    if (phase !== 'ready' || storms.length === 0) {
-      setProductsById({})
-      return
-    }
-    const ctrl = new AbortController()
-    ;(async () => {
-      const entries = await Promise.all(
-        storms.map(async (storm, i) => {
-          const id = storm.id ?? storm.name ?? `storm-${i}`
-          try {
-            return [id, await loadStormProducts(storm, ctrl.signal)] as const
-          } catch (e) {
-            if (e instanceof Error && e.name === 'AbortError') return null
-            return [id, undefined] as const
-          }
-        }),
-      )
-      if (ctrl.signal.aborted) return
-      const next: Record<string, NhcStormProducts> = {}
-      for (const row of entries) {
-        if (!row || !row[1]) continue
-        next[row[0]] = row[1]
-      }
-      setProductsById(next)
-    })()
-    return () => ctrl.abort()
-  }, [phase, stormKey, storms])
 
   const location = useMemo(
     () => ({ lat: latitude, lon: longitude }),
@@ -1761,11 +1556,8 @@ function SkywatchCard(props: {
 
 function scoreStatusHeadline(score: number | null): { label: string; summary: string } {
   if (score == null) return { label: 'LOADING', summary: 'Checking latest conditions' }
-  if (score <= 19) return { label: 'CALM', summary: 'No immediate local threats' }
-  if (score <= 39) return { label: 'GUARDED', summary: 'A few conditions to watch' }
-  if (score <= 59) return { label: 'ELEVATED', summary: 'Conditions need attention' }
-  if (score <= 79) return { label: 'HIGH', summary: 'Active hazards nearby' }
-  return { label: 'SEVERE', summary: 'Take action on active warnings' }
+  const { status, summary } = statusFromThreatScore(score)
+  return { label: status, summary }
 }
 
 function nwsTickerAlerts(alerts: NwsAlertFeature[]): string[] {
@@ -2094,12 +1886,16 @@ function App() {
   const [nhcPhase, setNhcPhase] = useState<LivePhase>('loading')
   const [atlanticStorms, setAtlanticStorms] = useState<NhcStorm[]>([])
   const [nhcError, setNhcError] = useState('')
+  const [nhcProductsById, setNhcProductsById] = useState<
+    Record<string, NhcStormProducts>
+  >({})
 
   const [quakeFetchedAt, setQuakeFetchedAt] = useState<Date | null>(null)
   const [nhcFetchedAt, setNhcFetchedAt] = useState<Date | null>(null)
 
   const [forecastPhase, setForecastPhase] = useState<LivePhase>('loading')
   const [forecastDays, setForecastDays] = useState<ForecastDay[]>([])
+  const [forecastHourly, setForecastHourly] = useState<NwsForecastPeriod[]>([])
   const [forecastError, setForecastError] = useState('')
   const [forecastFetchedAt, setForecastFetchedAt] = useState<Date | null>(null)
   const [forecastOfficialUrl, setForecastOfficialUrl] = useState<string | null>(null)
@@ -2349,16 +2145,58 @@ function App() {
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') return
         setNhcError(e instanceof Error ? e.message : 'Could not load NHC storms')
+        setAtlanticStorms([])
         setNhcPhase('error')
       }
     })()
     return () => ctrl.abort()
   }, [])
 
+  const atlanticStormKey = atlanticStorms
+    .map((s) => {
+      const adv =
+        s.forecastAdvisory?.advNum ??
+        s.forecastTrack?.advNum ??
+        s.lastUpdate ??
+        ''
+      return `${s.id ?? s.name ?? ''}:${adv}`
+    })
+    .join('|')
+
+  useEffect(() => {
+    if (nhcPhase !== 'ready' || atlanticStorms.length === 0) {
+      setNhcProductsById({})
+      return
+    }
+    const ctrl = new AbortController()
+    ;(async () => {
+      const entries = await Promise.all(
+        atlanticStorms.map(async (storm, i) => {
+          const id = storm.id ?? storm.name ?? `storm-${i}`
+          try {
+            return [id, await loadStormProducts(storm, ctrl.signal)] as const
+          } catch (e) {
+            if (e instanceof Error && e.name === 'AbortError') return null
+            return [id, undefined] as const
+          }
+        }),
+      )
+      if (ctrl.signal.aborted) return
+      const next: Record<string, NhcStormProducts> = {}
+      for (const row of entries) {
+        if (!row || !row[1]) continue
+        next[row[0]] = row[1]
+      }
+      setNhcProductsById(next)
+    })()
+    return () => ctrl.abort()
+  }, [nhcPhase, atlanticStormKey, atlanticStorms])
+
   useEffect(() => {
     if (preferMyLocation && geoPhase === 'locating') {
       setForecastPhase('loading')
       setForecastOfficialUrl(null)
+      setForecastHourly([])
       return
     }
 
@@ -2421,6 +2259,7 @@ function App() {
         }
 
         setForecastDays(pickDaytimeForecasts(periods, hourly))
+        setForecastHourly(hourly)
         setForecastOfficialUrl(forecastUrl)
         setForecastError('')
         setForecastFetchedAt(new Date())
@@ -2431,6 +2270,7 @@ function App() {
           e instanceof Error ? e.message : 'Could not load forecast',
         )
         setForecastDays([])
+        setForecastHourly([])
         setForecastOfficialUrl(null)
         setForecastPhase('error')
       }
@@ -2529,13 +2369,19 @@ function App() {
   const scoreLocationName = usingCurrentLocation
     ? (placeLabel ?? 'your location')
     : 'Virginia Beach'
-  const score = computeVbScore({
+  const scorePoint =
+    locationSource === 'browser' && geoPhase === 'ready' ? coords : VB_COORDS
+  const score = computeCoastCastScore({
     quakePhase,
     nwsPhase: weatherAlertPhase,
     nhcPhase,
+    forecastPhase,
     quakes,
     alerts: weatherAlerts,
+    hourly: forecastHourly,
     atlanticStorms,
+    productsById: nhcProductsById,
+    location: { lat: scorePoint.latitude, lon: scorePoint.longitude },
     locationName: scoreLocationName,
   })
 
@@ -2610,6 +2456,7 @@ function App() {
               placeLabel={placeLabel}
               weatherAlerts={weatherAlerts}
               weatherAlertPhase={weatherAlertPhase}
+              productsById={nhcProductsById}
             />
 
             <QuakesCard

@@ -32,8 +32,13 @@ export type NhcStorm = {
 
 export type NhcLatLon = { lat: number; lon: number }
 
+/** Forecast-track point; intensityMph set when TCM MAX WIND is known. */
+export type NhcTrackPoint = NhcLatLon & {
+  intensityMph?: number | null
+}
+
 export type NhcStormProducts = {
-  trackPoints: NhcLatLon[]
+  trackPoints: NhcTrackPoint[]
   coneRings: NhcLatLon[][]
   coneKnown: boolean
   wwKnown: boolean
@@ -206,16 +211,22 @@ function decodeLatLon(lat: number, ns: string, lon: number, ew: string): NhcLatL
   return { lat: la, lon: lo }
 }
 
-/** Official NHC Forecast/Advisory (TCM) forecast and outlook points. */
-export function parseTcmTrackPoints(text: string): NhcLatLon[] {
+const KT_TO_MPH = 1.1507794
+
+/** Official NHC Forecast/Advisory (TCM) forecast and outlook points + MAX WIND when present. */
+export function parseTcmTrackPoints(text: string): NhcTrackPoint[] {
   const plain = text.replace(/<[^>]+>/g, '\n')
   const re =
-    /(?:FORECAST|OUTLOOK)\s+VALID\s+\S+\s+(\d+(?:\.\d+)?)([NS])\s+(\d+(?:\.\d+)?)([EW])/gi
-  const points: NhcLatLon[] = []
+    /(?:FORECAST|OUTLOOK)\s+VALID\s+\S+\s+(\d+(?:\.\d+)?)([NS])\s+(\d+(?:\.\d+)?)([EW])([\s\S]{0,240}?)(?=(?:FORECAST|OUTLOOK)\s+VALID|$)/gi
+  const points: NhcTrackPoint[] = []
   let m: RegExpExecArray | null
   while ((m = re.exec(plain)) !== null) {
     const pt = decodeLatLon(Number(m[1]), m[2], Number(m[3]), m[4])
-    if (pt) points.push(pt)
+    if (!pt) continue
+    const windM = m[5].match(/MAX\s+WIND\s+(\d+)\s*KT/i)
+    const intensityMph =
+      windM != null ? Math.round(Number(windM[1]) * KT_TO_MPH) : null
+    points.push({ ...pt, intensityMph })
   }
   return points
 }
@@ -249,13 +260,13 @@ export function parseKmlPolygons(kml: string): NhcLatLon[][] {
   return rings
 }
 
-export function parseKmlPoints(kml: string): NhcLatLon[] {
-  const points: NhcLatLon[] = []
+export function parseKmlPoints(kml: string): NhcTrackPoint[] {
+  const points: NhcTrackPoint[] = []
   const re = /<Point\b[\s\S]*?<coordinates\b[^>]*>([\s\S]*?)<\/coordinates>/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(kml)) !== null) {
     const pts = parseKmlCoordTuples(m[1])
-    if (pts[0]) points.push(pts[0])
+    if (pts[0]) points.push({ ...pts[0], intensityMph: null })
   }
   return points
 }
@@ -379,7 +390,26 @@ export async function loadStormProducts(
 
   const fromTrack = trackKml ? parseKmlPoints(trackKml) : []
   const fromTcm = tcmText ? parseTcmTrackPoints(tcmText) : []
-  out.trackPoints = fromTrack.length > 0 ? fromTrack : fromTcm
+  if (fromTrack.length > 0 && fromTcm.length > 0) {
+    // Prefer GIS track geometry; attach TCM intensities by nearest matching point.
+    out.trackPoints = fromTrack.map((pt) => {
+      let best: NhcTrackPoint | null = null
+      let bestD = Infinity
+      for (const t of fromTcm) {
+        const d = haversineMiles(pt, t)
+        if (d < bestD) {
+          bestD = d
+          best = t
+        }
+      }
+      if (best && bestD <= 60 && best.intensityMph != null) {
+        return { ...pt, intensityMph: best.intensityMph }
+      }
+      return pt
+    })
+  } else {
+    out.trackPoints = fromTrack.length > 0 ? fromTrack : fromTcm
+  }
 
   if (coneKml) {
     out.coneRings = parseKmlPolygons(coneKml)
